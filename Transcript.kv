@@ -1,0 +1,543 @@
+#:kivy 2.1.0
+#:import math math
+#:import Window kivy.core.window.Window
+#:set tstamp_f '{:07.2f}'
+
+<BackgroundColor@Widget>:
+    background_color: 1, 1, 1, 0
+    canvas.before:
+        Color:
+            rgba: root.background_color
+        Rectangle:
+            size: self.size
+            pos: self.pos
+
+<FullLabel@Label+BackgroundColor>:
+    text_size: self.size
+    halign: 'left'
+    valign: 'middle'
+
+
+<Timestamp@BoxLayout+BackgroundColor>:
+
+    timestamp_label: ''
+    stamp_color: .25, .25, .25, 1
+    time_start: 0
+    time_end: 0
+
+    orientation: 'horizontal'
+
+    Label:
+        text: root.timestamp_label
+        color: 0, 0, 0, 1
+        font_size: 20
+        bold: True
+        size_hint: .10, 1
+    Label:
+        text:  tstamp_f.format(root.time_start)
+        color: root.stamp_color
+        font_size: 25
+        size_hint: .43, 1
+    Label:
+        text: '->'
+        color: .45, .45, .45, 1
+        font_size: 20
+        size_hint: .04, 1
+        width: 10
+    Label:
+        text: tstamp_f.format(root.time_end)
+        color: root.stamp_color
+        font_size: 25
+        size_hint: .43, 1
+
+<BeforeAfterTimestamps@BoxLayout+BackgroundColor>:
+
+    original_start: 0
+    original_end: 0
+    modified_start: 0
+    modified_end: 0
+
+    orientation: "vertical"
+    padding: 15, 0, 0, 0
+    background_color: 0, 0, 0, .02
+    
+    Timestamp:
+        timestamp_label: 'Orig:'
+        time_start: root.original_start
+        time_end: root.original_end
+        size_hint: 1, .5
+        background_color: root.background_color
+    Timestamp:
+        timestamp_label: 'Curr:'
+        time_start: root.modified_start
+        time_end: root.modified_end
+        size_hint: 1, .5
+        background_color: root.background_color
+
+<TranscriptRow>:
+
+    background_color: 1, 1, 1, 1
+    border_color: 0, 1, .25, .25
+    export_checkbox: id_export
+
+    canvas.before:
+        Color:
+            rgba: self.background_color if self.state == "down" else (0, 0, 0, 0)
+            rgba: self.background_color
+        Rectangle:
+            pos: self.pos
+            size: self.size
+        Color:
+            rgba: self.border_color if self.state == "down" else (0, 0, 0, 0)
+        RoundedRectangle:
+            pos: self.x + 5, self.y + 5
+            size: self.width - 10, self.height - 10
+
+    row_id: ''
+    speaker_name: ''
+    transcription: ''
+    original_start: 0.0
+    original_end: 0.0
+    modified_start: 0.0
+    modified_end: 0.0
+
+    group: "transcript_rows"
+
+    font_size: 35
+
+    cols: 5
+    rows: 1
+    size_hint: 1, None
+    padding: 10, 0, 10, 0
+
+    CheckBox:
+        id: id_export
+        active: True
+        size_hint: .05, .98
+
+    FullLabel:
+        id: lbl_id
+        color: .5, .5, .5, 1
+        text: root.row_id
+        size_hint: .08, .98
+        font_name: 'fonts/NotoSansSC-Regular.otf'
+        font_size: root.font_size
+
+    FullLabel:
+        id: lbl_speaker
+        bold: True
+        color: 0, 0, 0, 1
+        text: root.speaker_name
+        size_hint: .08, .98
+        font_name: 'fonts/NotoSansSC-Bold.otf'
+        font_size: root.font_size
+
+    FullLabel:
+        id: lbl_speach
+        color: 0, 0, 0, 1
+        text: root.transcription
+        size_hint: .64, .98
+        font_name: 'fonts/NotoSansSC-Medium.otf'
+        font_size: root.font_size
+
+    BeforeAfterTimestamps:
+        original_start: root.original_start
+        original_end: root.original_end
+        modified_start: root.modified_start
+        modified_end: root.modified_end
+        size_hint: .2, .98
+
+<CircleButton@Button>:
+    #Prevents the disabled button text from disappearing 
+    background_disabled_normal:'' 
+    #disabled_color: 1,1,1,1 
+    background_color: 0,0,0,0 # the last zero is the critical one, make invisible 
+    padding: [0, 0, 0, 0]
+    canvas.before: 
+        Color: 
+            rgba: (0.4,0.4,0.4,1) if self.state=='normal' else (0,0.7,0.7,1) # visual feedback of press 
+        Ellipse: 
+            pos:  self.pos
+            size: self.size
+
+
+<TimeEdit>:
+    orientation: "vertical"
+    time_label: id_time
+    adjust_slider: id_slider
+    step: .01
+    time_value: None
+    padding: 0, 0, 0, 10
+    bracket_seconds: 2
+    canvas.before: 
+        Color: 
+            rgba: .12, .12, .13, 1
+        Rectangle: 
+            pos:  self.pos
+            size: self.size
+
+    Slider:
+        size_hint: 1, .5
+        id: id_slider
+        min: -1 * root.bracket_seconds
+        max: 1 * root.bracket_seconds
+        value: 0
+        cursor_height: 20
+        cursor_width: 20
+        background_width: 25
+        disabled: id_time.text == ''
+        on_touch_move: root.slider_changed(*args)
+        on_touch_up: root.slider_changed(*args)
+
+    BoxLayout:
+        orientation: "horizontal"
+        size_hint: 1, .5
+        padding: 10, 0, 10, 0
+        CircleButton:
+            id: btn_decrease_start
+            size_hint: None, .9
+            pos_hint: {'y': .1}
+            width: self.height
+            text: "-"
+            font_size: 50
+            bold: True
+            on_release: root.decrease_time(*args)
+            disabled: id_time.text == ''
+        Label:
+            id: id_time
+            text: tstamp_f.format(root.time_value) if root.time_value is not None else ''
+            size_hint: 1, 1
+            font_size: 35
+        CircleButton:
+            id: btn_decrease_start
+            size_hint: None, .9
+            pos_hint: {'y': .1}
+            width: self.height
+            text: "+"
+            font_size: 50
+            bold: True
+            on_release: root.increase_time(*args)
+            disabled: id_time.text == ''
+    
+<EditRow>:
+    start_time: id_start_time
+    end_time: id_end_time
+    play_button: id_playstop
+    slider: id_audio_slider
+    speaker: id_speaker
+    sentence: id_sentence
+    sync_time: id_sync_time
+    time_label: id_time
+    audio_file: ""
+    cols: 1
+    rows: 3
+    padding: 0, 0, 0, 20
+
+    GridLayout:
+        cols: 3
+        rows: 1
+        size_hint: 1, None
+        TimeEdit:
+            id: id_start_time
+            label: "start"
+            size_hint: .15, None
+            validate: root.validate_time if root.validate_time else None
+            step: .01
+        BoxLayout:
+            orientation: "vertical"
+            size_hint: .65, None
+            Label:
+                id: id_time
+                text: "" if id_start_time.time_value is None or id_end_time.time_value is None else str(round(id_start_time.time_value + ((id_audio_slider.value/id_audio_slider.max)*(id_end_time.time_value - id_start_time.time_value)),2))
+            Slider:
+                id: id_audio_slider
+                min: 0
+                max: 100
+                step: 1
+                value: 0
+                value_track: True
+                orientation: 'horizontal'
+                on_value: root.audio_slider_change(*args)
+                pos_hint: {'top': .5}
+                cursor_height: 40
+                cursor_width: 40
+                background_width: 30
+                disabled: id_end_time.time_value is None
+        TimeEdit:
+            id: id_end_time
+            label: "end"
+            size_hint: .15, None
+            validate: root.validate_time if root.validate_time else None
+            step: .01
+
+    GridLayout:
+        rows: 1
+        cols: 2
+        size_hint: 1, 1
+        spacing: 10, 0
+        padding: 0, 10, 0, 0
+        GridLayout:
+            cols: 1
+            rows: 3
+            size_hint: .15, 1
+            Spinner:
+                size_hint: 1, None
+                height: 90
+                id: id_speaker
+                text: ''
+                values: ('Tom', 'Ula', '')
+                on_text: root.author_selected(*args)
+                disabled: True
+            Label:
+                size_hint: 1, 1
+                text: ''
+            MenuBar:
+                size_hint: 1, None
+                height: 90
+                rows: 1
+                cols: 2
+                padding: 15, 5, 0, 5
+                center: root.center
+                background_color: (1, 0, 0, 0)
+                spacing: 40, 0
+                pos_hint : {'center': (.05, .05)}
+                valign: 'center'
+                halign: 'middle'
+                RoundSvgButtonWidget:
+                    id: id_playstop
+                    size_hint: None, .5
+                    width: self.height
+                    color: (1, 1, 1, 1)            
+                    bg_color: (.4, .4, .4, 1)
+                    filename: 'images/play_circle.svg,images/stop_circle.svg'
+                    on_click: root.play_stop_click(*args)
+                    pos: self.pos
+                    pos_hint: {'center_y': 0.5}
+                    size: self.size
+                    offset: (3, 5)
+                    scale: self.parent.height / 1000, self.parent.height / 1000 #.07, .07
+                RoundRectSvgButtonWidget:
+                    pos_hint: {'center_y': 0.5}
+                    size_hint: None, .5
+                    width: self.height
+                    color: (1, 1, 1, 1)            
+                    bg_color: (.4, .4, .4, 1)
+                    filename: 'images/update.svg'
+                    pos: self.pos
+                    size: self.size
+                    offset: (3, 4)
+                    scale: self.parent.height / 1000, self.parent.height / 1000 # .07, .07
+                    on_click: root.update_clicked(*args)
+        TextInput:
+            id: id_sentence
+            text: ''
+            text_size: self.size
+            size_hint: .85, 1
+            font_size: 30
+            font_name: 'fonts/NotoSansSC-Medium.otf'
+            on_triple_tap: root.on_triple_tap(*args)
+        
+    BoxLayout:
+        size_hint: 1, None
+        CheckBox:
+            id: id_sync_time
+            active: True
+            size_hint_x: None
+            width: 70
+        FullLabel:
+            size_hint_x: 70
+            text: "Keep segment times in sync"
+
+<MenuBar@GridLayout+BackgroundColor>:
+
+<ProgressDialog>:
+    status: status
+    progress: progress
+    BoxLayout:
+        orientation: "vertical"
+        size: root.size
+        pos: root.pos
+        Label:
+            id: status
+            text: ""
+            text_size: self.size
+            halign: 'center'
+        ProgressBar:
+            id: progress
+            max: 1000
+            value: 0
+        Button:
+            text: "Cancel"
+            on_release: root.cancel()
+
+<LoadDialog>:
+    BoxLayout:
+        size: root.size
+        pos: root.pos
+        orientation: "vertical"
+        FileChooserListView:
+            id: filechooser
+            path: root.path
+        BoxLayout:
+            size_hint_y: None
+            height: 50
+            Button:
+                text: "Cancel"
+                on_release: root.cancel()
+            Button:
+                text: "Load"
+                on_release: root.load(filechooser.path, filechooser.selection)
+
+<SaveDialog>:
+    text_input: text_input
+    BoxLayout:
+        size: root.size
+        pos: root.pos
+        orientation: "vertical"
+        FileChooserListView:
+            id: filechooser
+            on_selection: text_input.text = self.selection and self.selection[0] or ''
+            path: root.path
+        BoxLayout:
+            size_hint_y: None
+            height: 60
+            FullLabel:
+                size_hint_x: 20
+                text: "Name"
+            TextInput:
+                id: text_input
+                size_hint_x: 80
+                multiline: False
+                text: root.file
+        BoxLayout:
+            size_hint_y: None
+            height: 60
+            CheckBox:
+                id: export
+                size_hint_x: 10
+                text: root.export
+            FullLabel:
+                size_hint_x: 90
+                text: "Export audio segments"
+        BoxLayout:
+            size_hint_y: None
+            height: 50
+            Button:
+                text: "Cancel"
+                on_release: root.cancel()
+            Button:
+                text: "Save"
+                on_release: root.save(filechooser.path, text_input.text, export.active)
+
+<TranscriptScreen>:
+    transcript_grid: id_grd_transcription
+    edit_row: id_editrow
+    video_edit: id_video
+    transcribe_btn: id_transcribe
+    title_label: id_title
+    short_checkbox: id_is_short
+    BoxLayout:
+        orientation: 'vertical'
+        size: root.width, root.height
+        GridLayout:
+            size_hint: 1, .1
+            canvas.before:
+                Color:
+                    rgba: .4, .4, .4, 1
+                Rectangle:
+                    size: self.size
+                    pos: self.pos
+            cols: 7
+            Label:
+                id: lbl_video
+                text: 'YouTube ID'
+                size_hint_x: .20
+            TextInput:
+                id: id_video
+                text: ''
+                font_size: 40
+                padding: 10, self.height / 2.0 - (self.line_height / 2.0) * len(self._lines), 0, 1
+                on_text: root.on_text(*args)
+                multiline: False
+            CheckBox:
+                canvas.before:
+                    Color:
+                        rgba: (.9, .9, .9, 1)
+                    Rectangle:
+                        size: self.size
+                        pos: self.pos
+                id: id_is_short
+                size_hint_x: .05
+            FullLabel:
+                background_color: (.9, .9, .9, 1)
+                text: ' Short'
+                size_hint_x: .12
+                color: (0, 0, 0, 1)
+            Button:
+                id: id_transcribe
+                text: 'Transcribe'
+                size_hint_x: .20
+                disabled: True
+                on_release: root.do_transcribe()
+            Button:
+                id: btn_save
+                text: 'Save'
+                size_hint_x: .13
+                disabled: not root.loaded
+                on_release: root.show_save()
+            Button:
+                id: btn_load
+                text: 'Load'
+                size_hint_x: .13
+                on_release: root.show_load()
+                
+        Label:
+            id: id_title
+            text: ''
+            size_hint: 1, None
+            height: 80
+            size: self.size
+
+        ScrollView:
+            do_scroll_x: False
+            do_scroll_y: True
+            size_hint: 1, .6
+            always_overscroll: True
+            on_scroll_start: root.on_scroll(*args)
+            GridLayout:
+                cols: 1
+                size_hint: 1, None
+                id: id_grd_transcription
+                #height: self.minimum_height
+                height: math.floor(self.parent.height/100) * 100 + 800 # 4 rows above an 4 below
+                on_size: root.on_grid_size(*args)
+        BoxLayout:
+            orientation: "horizontal"
+            size_hint: 1, .4
+            EditRow:
+                size_hint: .96, 1
+                id: id_editrow
+            BoxLayout:
+                size_hint: .04, None
+                height: (self.width - self.padding[0] - self.padding[2]) * 2 + 10
+                pos_hint: {'center_y': .5}
+                padding: 10, 0, 10, 0
+                spacing: 5
+                orientation: "vertical"
+                CircleButton:
+                    size_hint: 1, None
+                    text: "-"
+                    height: self.parent.width - self.parent.padding[0] - self.parent.padding[2]
+                    bold: True
+                    font_size: 50
+                    on_release: root.collapse_row(*args)
+                    disabled: id_editrow.active_row is None
+                CircleButton:
+                    size_hint: 1, None
+                    text: "+"
+                    height: self.parent.width - self.parent.padding[0] - self.parent.padding[2]
+                    bold: True
+                    font_size: 50
+                    on_release: root.split_row(*args)
+                    disabled: id_editrow.active_row is None
+        

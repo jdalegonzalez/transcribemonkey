@@ -1,0 +1,24 @@
+# OSX
+#
+.DS_Store
+
+# Xcode
+#
+
+# python
+__pycache__
+
+
+# App folders that are runtime
+# From the transcripts folder, I am including all the audio
+# samples, just not the transcripts themselves.  I'm doing
+# this because I want to be able to recreate the speaker
+# model but don't want to store the MASSIVE safe-tensor
+# in git
+trained-speakerbox/**
+transcripts/*.json
+audio_out/
+chunked-audio/
+speakerbox/
+*.json
+
