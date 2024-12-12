@@ -2,7 +2,6 @@
 #:import math math
 #:import Window kivy.core.window.Window
 #:set tstamp_f '{:07.2f}'
-
 <BackgroundColor@Widget>:
     background_color: 1, 1, 1, 0
     canvas.before:
@@ -79,29 +78,29 @@
     background_color: 1, 1, 1, 1
     border_color: 0, 1, .25, .25
     export_checkbox: id_export
+    index: None
+    selected: False
 
     canvas.before:
         Color:
-            rgba: self.background_color if self.state == "down" else (0, 0, 0, 0)
             rgba: self.background_color
         Rectangle:
             pos: self.pos
             size: self.size
         Color:
-            rgba: self.border_color if self.state == "down" else (0, 0, 0, 0)
+            rgba: self.border_color if self.selected else (0, 0, 0, 0)
         RoundedRectangle:
             pos: self.x + 5, self.y + 5
             size: self.width - 10, self.height - 10
 
     row_id: ''
-    speaker_name: ''
-    transcription: ''
+    speaker: ''
+    text: ''
     original_start: 0.0
     original_end: 0.0
     modified_start: 0.0
     modified_end: 0.0
-
-    group: "transcript_rows"
+    selectable: True
 
     font_size: 35
 
@@ -112,31 +111,29 @@
 
     CheckBox:
         id: id_export
-        active: True
         size_hint: .05, .98
+        active: root.export
+        on_active: root.export_checked(*args)
 
     FullLabel:
-        id: lbl_id
+        size_hint: .08, .98
         color: .5, .5, .5, 1
         text: root.row_id
-        size_hint: .08, .98
         font_name: 'fonts/NotoSansSC-Regular.otf'
         font_size: root.font_size
 
     FullLabel:
-        id: lbl_speaker
+        size_hint: .08, .98
         bold: True
         color: 0, 0, 0, 1
-        text: root.speaker_name
-        size_hint: .08, .98
+        text: root.speaker
         font_name: 'fonts/NotoSansSC-Bold.otf'
         font_size: root.font_size
 
     FullLabel:
-        id: lbl_speach
-        color: 0, 0, 0, 1
-        text: root.transcription
         size_hint: .64, .98
+        color: 0, 0, 0, 1
+        text: root.text
         font_name: 'fonts/NotoSansSC-Medium.otf'
         font_size: root.font_size
 
@@ -169,6 +166,7 @@
     time_value: None
     padding: 0, 0, 0, 10
     bracket_seconds: 2
+    align: 'left'
     canvas.before: 
         Color: 
             rgba: .12, .12, .13, 1
@@ -203,11 +201,21 @@
             bold: True
             on_release: root.decrease_time(*args)
             disabled: id_time.text == ''
-        Label:
+        TextInput:
             id: id_time
+            padding: 0, 0, 0, 0
+            background_color: 0, 0, 0, 0
+            cursor_color: 1, 1, 1, 1
+            foreground_color: 1, 1, 1, 1
             text: tstamp_f.format(root.time_value) if root.time_value is not None else ''
             size_hint: 1, 1
             font_size: 35
+            multiline: False
+            text_validate_unfocus: False
+            on_focus: root.time_value = float(self.text) if not self.focus else root.time_value
+            input_filter: 'float'
+            write_tab: False
+            halign: root.align
         CircleButton:
             id: btn_decrease_start
             size_hint: None, .9
@@ -240,15 +248,16 @@
         TimeEdit:
             id: id_start_time
             label: "start"
-            size_hint: .15, None
+            size_hint: .16, None
             validate: root.validate_time if root.validate_time else None
             step: .01
+            align: 'center'
         BoxLayout:
             orientation: "vertical"
-            size_hint: .65, None
+            size_hint: .68, None
             Label:
                 id: id_time
-                text: "" if id_start_time.time_value is None or id_end_time.time_value is None else str(round(id_start_time.time_value + ((id_audio_slider.value/id_audio_slider.max)*(id_end_time.time_value - id_start_time.time_value)),2))
+                text: "" if id_start_time.time_value is None or id_end_time.time_value is None else tstamp_f.format(round(id_start_time.time_value + ((id_audio_slider.value/id_audio_slider.max)*(id_end_time.time_value - id_start_time.time_value)),2))
             Slider:
                 id: id_audio_slider
                 min: 0
@@ -266,9 +275,10 @@
         TimeEdit:
             id: id_end_time
             label: "end"
-            size_hint: .15, None
+            size_hint: .16, None
             validate: root.validate_time if root.validate_time else None
             step: .01
+            align: 'center'
 
     GridLayout:
         rows: 1
@@ -279,7 +289,7 @@
         GridLayout:
             cols: 1
             rows: 3
-            size_hint: .15, 1
+            size_hint: .18, 1
             Spinner:
                 size_hint: 1, None
                 height: 90
@@ -328,14 +338,13 @@
                     offset: (3, 4)
                     scale: self.parent.height / 1000, self.parent.height / 1000 # .07, .07
                     on_click: root.update_clicked(*args)
-        TextInput:
+        SentenceInput:
             id: id_sentence
             text: ''
             text_size: self.size
             size_hint: .85, 1
             font_size: 30
             font_name: 'fonts/NotoSansSC-Medium.otf'
-            on_triple_tap: root.on_triple_tap(*args)
         
     BoxLayout:
         size_hint: 1, None
@@ -429,8 +438,10 @@
                 text: "Save"
                 on_release: root.save(filechooser.path, text_input.text, export.active)
 
+<RecycleSelectableBox@FocusBehavior+LayoutSelectionBehavior+RecycleBoxLayout>:
+
 <TranscriptScreen>:
-    transcript_grid: id_grd_transcription
+    transcript_view: id_transcription
     edit_row: id_editrow
     video_edit: id_video
     transcribe_btn: id_transcribe
@@ -498,19 +509,29 @@
             height: 80
             size: self.size
 
-        ScrollView:
+        RecycleView:
             do_scroll_x: False
             do_scroll_y: True
             size_hint: 1, .6
             always_overscroll: True
-            on_scroll_start: root.on_scroll(*args)
-            GridLayout:
-                cols: 1
+            data: root.lines
+            viewclass: 'TranscriptRow'
+            id: id_transcription
+            RecycleSelectableBox:
+                orientation: "vertical"
+                canvas.before:
+                    Color:
+                        rgba: 0, 0, 1, 1
+                    Rectangle:
+                        size: self.size
+                        pos: self.pos
                 size_hint: 1, None
-                id: id_grd_transcription
-                #height: self.minimum_height
-                height: math.floor(self.parent.height/100) * 100 + 800 # 4 rows above an 4 below
-                on_size: root.on_grid_size(*args)
+                height: self.minimum_height
+                default_size_hint: 1, None
+                multiselect: False
+                touch_multiselect: False
+                key_selection: 'selectable'
+
         BoxLayout:
             orientation: "horizontal"
             size_hint: 1, .4
@@ -531,7 +552,7 @@
                     bold: True
                     font_size: 50
                     on_release: root.collapse_row(*args)
-                    disabled: id_editrow.active_row is None
+                    disabled: id_editrow.active_ndx is None
                 CircleButton:
                     size_hint: 1, None
                     text: "+"
@@ -539,5 +560,5 @@
                     bold: True
                     font_size: 50
                     on_release: root.split_row(*args)
-                    disabled: id_editrow.active_row is None
+                    disabled: id_editrow.active_ndx is None
         

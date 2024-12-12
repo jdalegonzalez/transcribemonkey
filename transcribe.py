@@ -3,6 +3,7 @@ import argparse
 import os
 import sys
 import math
+import logging
 
 from typing import Optional
 
@@ -188,7 +189,7 @@ def get_youtube_audio(
         exit(2)
 
     if not progress_callback:
-        print(f'Audio saved as filename {filename}', file=sys.stderr)
+        logging.info(f'Audio saved as filename {filename}')
 
     return filename, audio, yt
 
@@ -242,7 +243,7 @@ def transcribe(
     segs, info = transcription
     
     if print_info:
-        print(f'Transcribing audio with duration: {info.duration}', file=sys.stderr)
+        logging.info(f'Transcribing audio with duration: {info.duration}')
 
     return segs, [audio_waveform, sr]
 
@@ -364,9 +365,13 @@ def get_segments(video_id, segments, audio, on_seg=None) -> list[SubSegment]:
         sub_len = len(subs)
         for subseg in subs:
             raw, sampling_rate = subseg.slice()
-            #feat = extract_features(t).reshape(1, -1)
-            #subseg.speaker = "Tom" if clf.predict(feat)[0] else "Ula"
-            subseg.speaker = classifier({"sampling_rate": sampling_rate, "raw": raw}, top_k=1)[0]['label'].capitalize()
+            ### If there is too little audio in the sample, we're just going to ignore attempting
+            ### set the speaker
+            if len(raw) > 1000:
+                subseg.speaker = classifier({"sampling_rate": sampling_rate, "raw": raw}, top_k=1)[0]['label'].capitalize()
+            else:
+                subseg.speaker = ""
+            logging.debug(f'Adding subsegment {subseg.id}, speaker: {subseg.speaker}')
             add_subsegment(flat_subs, subseg, collapse_speaker=False)
             if on_seg:
                 quit_looping = on_seg(f'Added segment {subseg.id}', cnt, sub_len)
