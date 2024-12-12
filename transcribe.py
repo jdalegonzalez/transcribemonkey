@@ -258,14 +258,10 @@ def add_subsegment(segments:list[SubSegment], new_segment:SubSegment, collapse_s
     param: new_segment: A single SubSegment to add to the array or append to the last
     return: The resulting array
     """
-    # Nothing in the array, add and return it.
-    if not len(segments):
-        segments.append(new_segment)
-        return segments
-    
+
     # Get the last segment
-    check_seg = segments[-1]
-    if check_seg.speaker == new_segment.speaker and collapse_speaker:
+    check_seg = segments[-1] if segments else None
+    if check_seg and check_seg.speaker.strip() == new_segment.speaker.strip() and collapse_speaker:
         check_seg.end = new_segment.end
         check_seg.text += new_segment.text
     else:
@@ -301,8 +297,7 @@ def split_segment(
         #   just bump the last guy and drop the segment.
 
         trunky = 100
-        prev_subseg = result[-1] if result else None
-        prev_subseg = prev_subseg if prev_subseg else last_sub
+        prev_subseg = result[-1] if result else last_sub
 
         if (prev_subseg and
             seg_to_append.text == prev_subseg.text and
@@ -310,6 +305,18 @@ def split_segment(
             prev_subseg.end = seg_to_append.end
             return
 
+        # If the very first segment doesn't start at 0, we'll add a buffer
+        # segment to account for all the space.
+        if not prev_subseg and seg_to_append.start > 0:
+            result.append(SubSegment(
+                yt_id=yt_id,
+                id='0.0', 
+                start=0,
+                end=seg_to_append.start,
+                text="",
+                audio=audio
+            ))
+    
         if not prev_subseg and seg_to_append.start > 0 and seg_to_append.start < 10:
             seg_to_append.start = 0
 
@@ -321,7 +328,7 @@ def split_segment(
             prev_subseg.end = math.floor((prev_subseg.end + end_pad) * trunky) / trunky
             seg_to_append.start = math.floor((seg_to_append.start - beg_pad) * trunky) / trunky
 
-        result.append(subseg)
+        result.append(seg_to_append)
 
     for word in segment.words:
         if subseg is None:
