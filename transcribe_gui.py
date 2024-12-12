@@ -589,7 +589,7 @@ class EditRow(GridLayout):
         if self.active_ndx is not None:
             events.update_request(self)
 
-class TranscriptRow(RecycleDataViewBehavior, GridLayout):
+class TranscriptRow(RecycleDataViewBehavior, BoxLayout):
     row_id = StringProperty()
     speaker = StringProperty()
     text = StringProperty()

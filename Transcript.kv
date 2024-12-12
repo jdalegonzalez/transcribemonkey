@@ -1,6 +1,4 @@
 #:kivy 2.1.0
-#:import math math
-#:import Window kivy.core.window.Window
 #:set tstamp_f '{:07.2f}'
 <BackgroundColor@Widget>:
     background_color: 1, 1, 1, 0
@@ -14,8 +12,7 @@
 <FullLabel@Label+BackgroundColor>:
     text_size: self.size
     halign: 'left'
-    valign: 'middle'
-
+    valign: 'top'
 
 <Timestamp@BoxLayout+BackgroundColor>:
 
@@ -25,6 +22,8 @@
     time_end: 0
 
     orientation: 'horizontal'
+    height: self.minimum_height
+    padding: 0, 10, 0, 10
 
     Label:
         text: root.timestamp_label
@@ -57,33 +56,40 @@
     modified_end: 0
 
     orientation: "vertical"
-    padding: 15, 0, 0, 0
-    background_color: 0, 0, 0, .02
-    
+    padding: 15, 5, 0, 5
+    spacing: 8
+    background_color: 1, 0, 0, 1
+
     Timestamp:
+        id: orig
         timestamp_label: 'Orig:'
         time_start: root.original_start
         time_end: root.original_end
-        size_hint: 1, .5
-        background_color: root.background_color
+        size_hint: 1, None
+
     Timestamp:
+        id: curr
         timestamp_label: 'Curr:'
         time_start: root.modified_start
         time_end: root.modified_end
-        size_hint: 1, .5
-        background_color: root.background_color
+        size_hint: 1, None
+
+    Label:
+        text: ""
+        height: max(0, self.parent.height - orig.height - curr.height)
 
 <TranscriptRow>:
 
-    background_color: 1, 1, 1, 1
+    even_color: 1, 1, 1, 1
+    odd_color: .95, .95, .95, 1
     border_color: 0, 1, .25, .25
     export_checkbox: id_export
     index: None
     selected: False
-
+    am_even: self.index is None or self.index % 2 == 0
     canvas.before:
         Color:
-            rgba: self.background_color
+            rgba: (1,1,1,1) if self.selected else self.even_color if self.am_even else self.odd_color
         Rectangle:
             pos: self.pos
             size: self.size
@@ -104,19 +110,21 @@
 
     font_size: 35
 
-    cols: 5
-    rows: 1
     size_hint: 1, None
     padding: 10, 0, 10, 0
+    height: self.minimum_height
 
     CheckBox:
         id: id_export
-        size_hint: .05, .98
+        size_hint: .05, None
+        pos_hint: {'top': 1}
+        height: 60
         active: root.export
         on_active: root.export_checked(*args)
 
     FullLabel:
         size_hint: .08, .98
+        pos_hint: {'top': 1}
         color: .5, .5, .5, 1
         text: root.row_id
         font_name: 'fonts/NotoSansSC-Regular.otf'
@@ -124,25 +132,33 @@
 
     FullLabel:
         size_hint: .08, .98
+        pos_hint: {'top': 1}
         bold: True
         color: 0, 0, 0, 1
         text: root.speaker
         font_name: 'fonts/NotoSansSC-Bold.otf'
         font_size: root.font_size
 
-    FullLabel:
-        size_hint: .64, .98
+    Label:
+        id: the_text
+        size_hint: None, None
         color: 0, 0, 0, 1
         text: root.text
         font_name: 'fonts/NotoSansSC-Medium.otf'
         font_size: root.font_size
-
+        width: root.width * .62
+        padding: 0, 0, 0, 20
+        height: self.texture_size[1]
+        text_size: self.width, None
+        halign: 'left'
+        
     BeforeAfterTimestamps:
         original_start: root.original_start
         original_end: root.original_end
         modified_start: root.modified_start
         modified_end: root.modified_end
         size_hint: .2, .98
+        background_color: (0, 0, 0, .08) if not root.selected else (0,0,0,0) 
 
 <CircleButton@Button>:
     #Prevents the disabled button text from disappearing 
