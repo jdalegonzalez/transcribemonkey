@@ -4,6 +4,7 @@
 
 # Xcode
 #
+*.code-workspace
 
 # python
 __pycache__

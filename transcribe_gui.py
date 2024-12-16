@@ -3,7 +3,7 @@ import json
 import re
 import os
 import threading
-import math
+import sys
 import logging as lg
 
 import numpy as np
@@ -29,7 +29,6 @@ from kivy.uix.gridlayout import GridLayout
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.floatlayout import FloatLayout
 from kivy.uix.button import Button
-from kivy.uix.behaviors import ToggleButtonBehavior
 from kivy.uix.recycleview.views import RecycleDataViewBehavior
 from kivy.uix.textinput import TextInput
 from kivy.graphics import Color, RoundedRectangle, Ellipse, Scale, Translate, PushMatrix, PopMatrix
@@ -53,31 +52,62 @@ from kivy.properties import (
     )
 
 SAMPLING_RATE = 44100
+_is_osx = sys.platform == 'darwin'
+app = None
 
 class SentenceInput(TextInput):
+
+    meta_key_map = {
+        'cursor_left': 'cursor_home',
+        'cursor_right': 'cursor_end',
+        'cursor_up': 'cursor_up',
+        'cursor_down': 'cursor_down',
+    }
 
     def on_triple_tap(self, *args):
         # We're doing this twice.  Once to get it set and
         # once to get it displayed.
         Clock.schedule_once(lambda x: self.select_all())
     
-    def do_cursor_movement(self, action, control=False, alt=False):
-
-        if alt and action == 'cursor_left':
-            print("MEMEMEMMEME")
+    def keyboard_on_key_down(self, window, keycode, text, modifiers):
+        modifiers = set(modifiers)
+        key, _ = keycode
+        is_shortcut = (
+            modifiers == {'ctrl'}
+            or _is_osx and modifiers == {'meta'}
+        )
+        if is_shortcut:
+            k = SentenceInput.meta_key_map.get(self.interesting_keys.get(key))
+            if k:
+                self.do_cursor_movement(k, is_shortcut=True)
+                return
             
+        return super().keyboard_on_key_down(window, keycode, text, modifiers)
+
+    def do_cursor_movement(self, action, control=False, alt=False, is_shortcut=False):
+
         if not control and not alt:
             col, row = self.cursor
+            handle = False
             if action == 'cursor_up' and row == 0 and col > 0:
                 col = 0
-                self.cursor = col, row
-                return
+                handle = True
             elif action == 'cursor_down' and row == len(self._lines) - 1 and col < len(self._lines[row]):
                 col = len(self._lines[row])
+                handle = True
+            elif action == 'cursor_beginning':
+                col = 0
+                row = 0
+                handle = True
+            elif action == 'cursor_end':
+                col = len(self._lines[row])
+                row = max(0,len(self._lines) - 1)
+                handle = True
+            if handle:
                 self.cursor = col, row
                 return
-
-        return super().do_cursor_movement(action, control=False, alt=False)
+            
+        return super().do_cursor_movement(action, control, alt)
 
 
 def app_path():
@@ -614,7 +644,7 @@ class TranscriptRow(RecycleDataViewBehavior, BoxLayout):
             return self.parent.select_with_touch(self.index, touch)
             
     def apply_selection(self, rv, index, is_selected):
-        ''' Respond to the selection of items in the view. '''
+        ''' Respond to the selection of items in the view '''
         self.selected = is_selected
         rv.data[index]['selected'] = is_selected
         if is_selected:
@@ -625,6 +655,19 @@ class TranscriptRow(RecycleDataViewBehavior, BoxLayout):
         self.index = index
         return super().refresh_view_attrs(rv, index, data)
     
+    def set_line(self, line):
+        self.row_id = line['row_id']
+        self.speaker = line['speaker']
+        self.original_start = line['original_start']
+        self.original_end = line['original_end']
+        self.modified_start = line['modified_start']
+        self.modified_end = line['modified_end']
+        self.text = line['text']
+
+        self.selectable = line['selectable']
+        self.selected = line['selected']
+        self.export = line['export']
+
 class TranscriptScreen(Widget):
 
     title_label = ObjectProperty()
@@ -636,19 +679,133 @@ class TranscriptScreen(Widget):
     lines = ListProperty([])
 
     loaded = BooleanProperty(False)
+    dirty = BooleanProperty(False)
 
     stop = threading.Event()
 
     def __init__(self, **kwargs):
         self.filename = ""
         self.top_line = 0
+        self.row_for_height = TranscriptRow()
+
         events.bind(on_rowselect=self.on_rowselect)
         events.bind(on_update_request=self.on_update_request)
         events.bind(on_export_checked=self.on_export_checked)
         self.transcribe_canceled = False
         self._popup = None
         self.handler = OnScreenLogger(self.on_logging)
+        Window.bind(on_request_close=self.on_request_close)
+        Window.bind(on_resize=self.on_window_resize)
         super(TranscriptScreen, self).__init__(**kwargs)
+
+        self.window_resize_trigger = Clock.create_trigger(self.window_resize_triggered)
+
+    def window_resize_triggered(self, *args):
+        for line in self.lines:
+            line['size'] = self.calculate_size(line)
+        Clock.schedule_once(lambda _x: self.transcript_view.refresh_from_data())
+
+    def on_window_resize(self,*args):
+        self.window_resize_trigger()
+
+    def on_request_close(self,*args):
+        if self.dirty:
+            self.dirty = False
+            def close_cancel(*_):
+                self.dismiss_popup()
+                app.stop()
+            self.show_save(cancel=close_cancel)
+            return True
+        
+    def list_keyboard_key_down(self, _kb, keycode, text, modifiers):
+        modifiers = set(modifiers)
+        _, keyname = keycode
+        is_shortcut = (
+            modifiers == {'ctrl'}
+            or _is_osx and modifiers == {'meta'}
+        )
+
+        # if there's text, it's not a command
+        if text:
+            return
+        
+        nr = None
+        new_ndx = None
+        current_ndx = self.edit_row.active_ndx
+
+        keyname = "home" if keyname == "up" and is_shortcut else keyname
+        keyname = "end" if keyname == "down" and is_shortcut else keyname
+
+        if keyname == 'up':
+            if current_ndx is None:
+                nr = self.lines[0] if self.lines else None
+                new_ndx = 0 if self.lines else None
+            else:
+                nr, new_ndx = self.previous_row(self.edit_row.active_ndx)
+        elif keyname == "home":
+            nr, new_ndx = (self.lines[0], 0)        
+        elif keyname == 'down':
+            if current_ndx is None:
+                nr = self.lines[len(self.lines) - 1] if self.lines else None
+                new_ndx = len(self.lines) - 1 if self.lines else None
+            else:
+                nr, new_ndx = self.next_row(self.edit_row.active_ndx)
+        elif keyname == "end":
+            nr, new_ndx = (self.lines[len(self.lines) - 1], len(self.lines) - 1)            
+
+        if nr:
+            self.transcript_view.layout_manager.select_node(new_ndx)
+            self.scroll_into_view(new_ndx, keyname)
+
+    def scroll_into_view(self, ndx, key):
+
+        def flarm(*_):
+            rv = self.transcript_view
+            va = self.transcript_view.view_adapter
+            lm = self.transcript_view.layout_manager
+            vp = self.transcript_view.get_viewport()
+            widget = va.get_visible_view(ndx)
+            if not widget:
+                # If we were scrolling down, we're going to assume 
+                # that ndx should be last
+                if key == "home":
+                    new_scroll_y = 1
+                elif key == "end":
+                    new_scroll_y = 0
+                else:
+                    widgets = list(lm.view_indices)
+                    if key == "down":
+                        widget = widgets[0]
+                        dir = -1
+                    else: 
+                        widget = widgets[-1]
+                        dir = 1
+                    widget_h = widget.height + widget.padding[1] + widget.padding[3]
+                    new_scroll_y = 1 if ndx == 0 else 1 if ndx == len(self.lines) - 1 else rv.scroll_y + (dir * (widget_h / (lm.height - rv.height)))
+                rv.scroll_y = new_scroll_y
+            else:
+                # Make sure the view is completely visible.
+                widget_h = widget.height + widget.padding[1] + widget.padding[3]
+                _vp_right, vp_bottom, _vp_width, vp_height = vp
+                bottom = widget.top - vp_bottom
+
+                if key == "down":
+                    dir = -1
+                    showing = bottom
+                else:
+                    dir = 1
+                    top = (vp_height - bottom)
+                    showing = widget_h + top
+
+                if showing < (widget_h * .95):
+                    new_scroll_y = 1 if ndx == 0 else 0 if ndx == len(self.lines) - 1 else rv.scroll_y + (dir * (widget_h / (lm.height - rv.height)))
+                    rv.scroll_y = new_scroll_y
+                elif ndx == 0 and rv.scroll_y < 1:
+                    rv.scroll_y = 1
+                elif ndx == len(self.lines) - 1 and rv.scroll_y > 0:
+                    rv.scroll_y = 0
+
+        Clock.schedule_once(flarm)
 
     def split_row(self, *args):
         ndx = self.edit_row.active_ndx
@@ -658,25 +815,41 @@ class TranscriptScreen(Widget):
         # If we're trying to allocate less than half a second, we're going
         # to refuse to do it.
         dur = round((row['modified_end'] - row['modified_start']) / 2,2)
-        if dur > .05:
-            new_row = dict(row)
+        if dur <= .05:
+            return
 
-            # Figure out what the ID of the new row should be...
-            next_row, _ =  self.next_row(ndx)
-            id_pieces = row['row_id'].split(".")
-            id_pieces[-1] = str(int(id_pieces[-1])+1)
-            new_id = ".".join(id_pieces)
-            
-            if not next_row is None and next_row['row_id'] == new_id:
-                new_id = row['row_id'] + ".0"
-            
-            new_row['row_id'] = new_id
-            
+        # Figure out what the ID of the new row should be...
+        next_row, _ =  self.next_row(ndx)
+        id_pieces = row['row_id'].split(".")
+        id_pieces[-1] = str(int(id_pieces[-1])+1)
+        new_id = ".".join(id_pieces)        
+        if not next_row is None and next_row['row_id'] == new_id:
+            new_id = row['row_id'] + ".0"
+
+        # If the slider is currently positioned at the beginning of the 
+        # clip, or the cursor is at the beginning of the string, 
+        # we'll use a naive "split the thing in half and duplicate" the 
+        # text.  Otherwise, we'll use the cursor position to determine
+        # what stays in this row and the slider to determine the end time.
+        cur = self.edit_row.sentence.cursor_index()
+        val = self.edit_row.slider.value
+        new_row = dict(row)
+        new_row['row_id'] = new_id
+
+        if val != 0 and cur != 0:
+            dur = (val/self.edit_row.slider.max)*(row['modified_end'] - row['modified_start'])
+            end = round(row['modified_start'] + dur, 2)
+            row['text'] = self.edit_row.sentence.text[:cur]
+            new_row['text'] = self.edit_row.sentence.text[cur:]
+            row['modified_end'] = end
+            new_row['modified_start'] = end
+        else:            
             row['modified_end'] = round(row['modified_start'] + dur,2)
-            self.edit_row.end_time.base_time = None
-            self.edit_row.end_time.time_value = row['modified_end']
             new_row['modified_start'] = row['modified_end']
-            self.insert_row(ndx + 1, new_row)
+
+        self.insert_row(ndx + 1, new_row)
+        self.edit_row.end_time.base_time = None
+        self.edit_row.end_time.time_value = row['modified_end']
 
 
     def collapse_row(self, *args):
@@ -693,7 +866,7 @@ class TranscriptScreen(Widget):
             ### If you're collapsing back something that you just split,
             ### you probably don't want the text duplicated, so... if
             ### both lines of text are identical, we'll just keep one.
-            speaker = next_row['speaker'] if len(next_row['speaker'].strip()) > 0 else \
+            row['speaker'] = next_row['speaker'] if len(next_row['speaker'].strip()) > 0 else \
                 row['speaker']
             if row['text'].strip() != next_row['text'].strip():
                 row['text'] += next_row['text']
@@ -726,22 +899,43 @@ class TranscriptScreen(Widget):
         if prog is not None:
             dialog.progress.value = prog
 
+    def calculate_size(self, line):
+        self.row_for_height.set_line(line)
+        self.row_for_height.width = self.width
+        self.row_for_height.text_widget.texture_update()
+        return (self.row_for_height.size[0], self.row_for_height.text_widget.texture_size[1])
+    
     @mainthread
     def load_transcript_from_dict(self, transcript):
 
         def conv(itm):
-            itm['row_id'] = itm['id']
-            itm.pop('id', None)
-            itm['text'] = HanziConv.toSimplified(itm['text'].strip())
-            itm['export'] = True
-            itm['selectable'] = True
-            itm['selected'] = False
-            orig = itm.pop('original')
-            itm['original_start'] = orig['start']
-            itm['original_end'] = orig['end']
-            mod = itm.pop('modified')
-            itm['modified_start'] = mod['start']
-            itm['modified_end'] = mod['end']
+            # If we see the "id" in the itm, 
+            # it's the old format.  So, we'll 
+            # convert from it.
+            if itm.get('id', None):
+                itm['row_id'] = itm['id']
+                itm.pop('id', None)
+
+            # If we see "original", it's the old
+            # time format, so we'll convert from it
+            if itm.get('original', None):
+                orig = itm.pop('original')
+                itm['original_start'] = orig['start']
+                itm['original_end'] = orig['end']
+
+            # If we see "modified", it's the old
+            # time format, so we'll convert from it
+            if itm.get('modified', None):
+                mod = itm.pop('modified')
+                itm['modified_start'] = mod['start']
+                itm['modified_end'] = mod['end']
+
+            itm['selectable'] = itm.get('selectable', True)
+            itm['selected'] = itm.get('selected', False)
+            itm['export'] = itm.get('export', True)
+
+            itm['size'] = self.calculate_size(itm)
+
             return itm
 
         self.edit_row.clear_data()
@@ -749,7 +943,28 @@ class TranscriptScreen(Widget):
         self.title_label.text = transcript["title"] if transcript["title"] else ""
         self.video_edit.text = transcript["YouTubeID"] if transcript["YouTubeID"] else ""
         self.edit_row.audio_file = transcript["AudioFile"] if transcript["AudioFile"] else ""
-        self.lines = [ conv(itm) for itm in transcript["transcription"]] if transcript["transcription"] else []
+        self.lines = [ conv(itm) for itm in transcript["transcription"] ] if transcript["transcription"] else []
+
+        selected_index = None
+        scroll_height = 0
+        ndx = 0
+        for line in self.lines:
+            if line['selected']:
+                selected_index = ndx
+                break
+            ndx += 1
+            scroll_height += line['size'][1]
+        
+        # If we've got a selected row, we're going to make sure it's scrolled into view.
+        if selected_index is not None:
+            tv  = self.transcript_view
+            tvh = tv.height
+            def update(_tm):
+                tv.scroll_y = min(1, max(0, 1 - scroll_height/(tv.children[0].height-tvh)))
+                tv.layout_manager.select_node(selected_index)
+            if scroll_height > tvh:
+                Clock.schedule_once(update)
+
         self.loaded = True
 
 
@@ -803,20 +1018,19 @@ class TranscriptScreen(Widget):
             length = len(flat_subs)
             for segment in flat_subs:
                 new_row = {}
-                new_row['id'] = segment.id
+                new_row['row_id'] = segment.id
                 new_row['speaker'] = segment.speaker
-                new_row['text'] = segment.text
-                new_row['original'] = {}
-                new_row['original']['start'] = segment.start
-                new_row['original']['end'] = segment.end
-                new_row['modified'] = {}
-                new_row['modified']['start'] = segment.start
-                new_row['modified']['end'] = segment.end
+                new_row['original_start'] = segment.start
+                new_row['original_end'] = segment.end
+                new_row['modified_start'] = segment.start
+                new_row['modified_end'] = segment.end
+                new_row['text'] = HanziConv.toSimplified(segment.text)
                 transcript["transcription"].append(new_row)
                 self.update_progress(dialog, prog = 800 + ((len(transcript["transcription"])/length)*100))
 
         if transcript and not self.stop.is_set():
             self.filename = ""
+            self.dirty = True
             self.load_transcript_from_dict(transcript)
 
         self.cancel_transcribe()
@@ -844,11 +1058,14 @@ class TranscriptScreen(Widget):
                             size_hint=(0.8, 0.8))
         self._popup.open()
 
-    def show_save(self):
+    def show_save(self, cancel=None):
+        if cancel is None:
+            cancel = self.dismiss_popup
+
         p, f = os.path.split(self.filename)
         p = p or app_path()
         f = f or f'{self.video_edit.text.strip()}.transcript.json'
-        content = SaveDialog(save=self.save, cancel=self.dismiss_popup, path=p, file=f)
+        content = SaveDialog(save=self.save, cancel=cancel, path=p, file=f)
         self._popup = Popup(title="Save file", content=content,
                             size_hint=(0.8, 0.8))
         self._popup.open()
@@ -884,10 +1101,14 @@ class TranscriptScreen(Widget):
         # The user has requested that the row be updated.
         row = self.lines[editrow.active_ndx]
         if row['speaker'] != editrow.speaker.text:
+            self.dirty = True
             row['speaker'] = editrow.speaker.text
 
         if row['text'] != editrow.sentence.text:
+            self.dirty = True
             row['text'] = editrow.sentence.text
+            row['size'] = self.calculate_size(row)
+            self.transcript_view.refresh_from_data()
 
         # There is one little trickyness in that the start
         # has been updated, the end of the previous row has
@@ -901,12 +1122,14 @@ class TranscriptScreen(Widget):
         keep_sync = editrow.sync_time.active
 
         if row['modified_start'] != new_start:
+            self.dirty = True
             row['modified_start'] = new_start
             prev_row, _ = self.previous_row(editrow.active_ndx)
             if keep_sync and prev_row is not None:
                 prev_row['modified_end'] = new_start
         
         if row['modified_end'] != new_end:
+            self.dirty = True
             row['modified_end'] = new_end
             next_row, next_ndx = self.next_row(editrow.active_ndx)
             if keep_sync and next_row is not None:
@@ -918,10 +1141,10 @@ class TranscriptScreen(Widget):
                     self.remove_row(next_ndx)
         
         nr, new_ndx = self.next_row(editrow.active_ndx)
-        if nr:
-            self.transcript_view.layout_manager.select_node(new_ndx)
-
         self.transcript_view.refresh_from_data()
+        if nr:
+            self.transcript_view.layout_manager.select_node(new_ndx)            
+            self.scroll_into_view(new_ndx, "down")
 
 
 
@@ -937,21 +1160,20 @@ class TranscriptScreen(Widget):
         self.dismiss_popup()
 
 
-    def save(self, path, filename, export):
+    def save(self, path, filename, export, save_finished):
         # Save grab all the various bits and pieces and build a
         # json ball that we can save.
         path = path or app_path()
         if not filename:
             return
-        
+        self.dirty = False
         audio, sr = self.edit_row.audio if export else [ None, 0 ]
 
         transcript = {}
         transcript["title"] = self.title_label.text.strip()
         transcript["YouTubeID"] = self.video_edit.text.strip()
         transcript["AudioFile"] = self.edit_row.audio_file
-        transcript["transcription"] = []
-        kids = self.lines
+        transcript["transcription"] = self.lines
 
         def dest(id: str, speaker: str) -> str:
             p = os.path.join(path, "audio_samples", self.video_edit.text.strip(), speaker.strip().lower())
@@ -959,15 +1181,7 @@ class TranscriptScreen(Widget):
                 os.makedirs(p)
             return str(os.path.join(p, f'{self.video_edit.text.strip()}.{id}.wav'))
 
-        for kid in kids:
-            new_kid = {
-                'id': kid['row_id'],
-                'speaker': kid['speaker'],
-                'original': {'start': kid['original_start'], 'end': kid['original_end']},
-                'modified': {'start': kid['modified_start'], 'end': kid['modified_end']},
-                'text': kid['text']
-            }
-            transcript["transcription"].append(new_kid)
+        for kid in self.lines:
             if export and kid['export']:
                 seg = AudioSegment(audio, kid['modified_start'], kid['modified_end'], sr)
                 seg.save(dest(kid['row_id'], kid['speaker_name']))
@@ -976,7 +1190,7 @@ class TranscriptScreen(Widget):
             json.dump(transcript, stream, indent = 2, ensure_ascii=False)
             stream.write("\n")
 
-        self.dismiss_popup()
+        save_finished()
 
     def load_transcript_from_file(self, filename: str):
         self.filename = filename
@@ -986,7 +1200,6 @@ class TranscriptScreen(Widget):
         self.load_transcript_from_dict(transcript)
 
 class TranscriptApp(App):
-
     def build(self):
         args = get_arguments()
         screen = TranscriptScreen()
@@ -1016,4 +1229,5 @@ def get_arguments():
 
 if __name__ == '__main__':
     Config.set('kivy', 'exit_on_escape', 0)
-    TranscriptApp().run()
+    app = TranscriptApp()
+    app.run()

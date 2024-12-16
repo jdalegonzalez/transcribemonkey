@@ -276,12 +276,7 @@ def split_segment(
         last_sub: Optional[SubSegment],
         punctuation:str="\"'.。!！?？:：”)]}、") -> list[SubSegment]:
 
-    id_base = segment.id
-    sub_id = 0
     result = []
-    subseg = None
-    punc_tuples = tuple(list(punctuation))
-
     def do_append(seg_to_append):
         # There are times when whisper's word timings aren't accurate.
         # There is a package called stable-ts, which I am importing,
@@ -329,6 +324,11 @@ def split_segment(
             seg_to_append.start = math.floor((seg_to_append.start - beg_pad) * trunky) / trunky
 
         result.append(seg_to_append)
+
+    id_base = segment.id
+    sub_id = 0
+    subseg = None
+    punc_tuples = tuple(list(punctuation))
 
     for word in segment.words:
         if subseg is None:

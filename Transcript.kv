@@ -79,7 +79,7 @@
         height: max(0, self.parent.height - orig.height - curr.height)
 
 <TranscriptRow>:
-
+    text_widget: the_text
     even_color: 1, 1, 1, 1
     odd_color: .95, .95, .95, 1
     border_color: 0, 1, .25, .25
@@ -111,7 +111,7 @@
     font_size: 35
 
     size_hint: 1, None
-    padding: 10, 0, 10, 0
+    padding: 10, 5, 10, 5
     height: self.minimum_height
 
     CheckBox:
@@ -123,35 +123,43 @@
         on_active: root.export_checked(*args)
 
     FullLabel:
-        size_hint: .08, .98
+        size_hint: .08, 1
         pos_hint: {'top': 1}
         color: .5, .5, .5, 1
         text: root.row_id
         font_name: 'fonts/NotoSansSC-Regular.otf'
         font_size: root.font_size
+        padding: 0, 0, 0, 5
+        multiline: False
 
     FullLabel:
-        size_hint: .08, .98
+        size_hint: .08, 1
         pos_hint: {'top': 1}
         bold: True
         color: 0, 0, 0, 1
         text: root.speaker
         font_name: 'fonts/NotoSansSC-Bold.otf'
         font_size: root.font_size
+        padding: 0, 0, 0, 5
+        multiline: False
 
     Label:
         id: the_text
         size_hint: None, None
         color: 0, 0, 0, 1
-        text: root.text
+        text: root.text + '\n'
         font_name: 'fonts/NotoSansSC-Medium.otf'
         font_size: root.font_size
         width: root.width * .62
-        padding: 0, 0, 0, 20
+        padding: 0, 0, 10, 0
         height: self.texture_size[1]
         text_size: self.width, None
         halign: 'left'
-        
+        valign: 'top'
+        line_height: 1
+        multiline: False
+        markup: False
+
     BeforeAfterTimestamps:
         original_start: root.original_start
         original_end: root.original_end
@@ -372,6 +380,7 @@
         FullLabel:
             size_hint_x: 70
             text: "Keep segment times in sync"
+            valign: "middle"
 
 <MenuBar@GridLayout+BackgroundColor>:
 
@@ -452,7 +461,7 @@
                 on_release: root.cancel()
             Button:
                 text: "Save"
-                on_release: root.save(filechooser.path, text_input.text, export.active)
+                on_release: root.save(filechooser.path, text_input.text, export.active, root.cancel)
 
 <RecycleSelectableBox@FocusBehavior+LayoutSelectionBehavior+RecycleBoxLayout>:
 
@@ -497,9 +506,11 @@
                 size_hint_x: .05
             FullLabel:
                 background_color: (.9, .9, .9, 1)
-                text: ' Short'
+                padding: (20, 0, 0, 0)
+                text: 'Short'
                 size_hint_x: .12
                 color: (0, 0, 0, 1)
+                valign: "middle"
             Button:
                 id: id_transcribe
                 text: 'Transcribe'
@@ -547,6 +558,8 @@
                 multiselect: False
                 touch_multiselect: False
                 key_selection: 'selectable'
+                key_size: 'size'
+                keyboard_on_key_down: root.list_keyboard_key_down
 
         BoxLayout:
             orientation: "horizontal"
