@@ -11,13 +11,12 @@ import numpy as np
 from hanziconv import HanziConv
 
 import sounddevice as sd
-import soundfile as sf
 
 import xml.etree.ElementTree as ET
 
 from pytubefix import Stream
 
-from transcribe import get_youtube_audio, transcribe, get_segments
+from transcribe import get_youtube_audio, transcribe, get_segments, save as save_results, audio_from_file
 
 import kivy
 kivy.require('2.3.0')
@@ -351,17 +350,19 @@ class TimeEdit(BoxLayout):
     
     def on_time_value(self, widget, val):
 
+        if self.base_time is None:
+            self.base_time = val
+            if self.adjust_slider:
+                self.adjust_slider.value = 0
+    
+        if val is None:
+            return
+        
         val_f = self.validate
         if callable(val_f) and not val_f(self, round(val, 2)):
             widget.text = '{:07.2f}'.format(self.time_value)
 
-        if self.base_time is None:
-            self.base_time = val
-            self.adjust_slider.value = 0
-    
-        if self.adjust_slider is not None and \
-           val is not None and \
-           self.base_time is not None:
+        if self.adjust_slider is not None:
             offset = max(self.adjust_slider.min, min(val - self.base_time, self.adjust_slider.max))
             self.adjust_slider.value = offset
 
@@ -399,14 +400,6 @@ class AudioSegment():
         self.stream = None
         self.device = None
         self.all_frames = None
-
-    def from_file(source: str, sampling_rate: int = SAMPLING_RATE) -> np.array:
-        """
-        Helper function to read an audio file through ffmpeg.
-        """
-        import faster_whisper
-        aud = faster_whisper.decode_audio(source, sampling_rate=sampling_rate)
-        return (aud, sampling_rate)
 
     @property
     def segment(self):
@@ -466,10 +459,6 @@ class AudioSegment():
         ctx.start_stream(sd.OutputStream, self.sample_rate, ctx.output_channels,
                         ctx.output_dtype, _callback, False,
                         prime_output_buffers_using_stream_callback=False)
-
-    def save(self, dest):
-        slice = self._audio_data[int(self.start * self.sample_rate):int(self.end * self.sample_rate)]
-        sf.write(dest, slice, self.sample_rate)
 
     def __repr__(self):
         return f'[id: {self.id}, start: {self.start}, end: {self.end}, text: "{self.text}", speaker: "{self.speaker}"]'
@@ -558,7 +547,7 @@ class EditRow(GridLayout):
     def on_audio_file(self, _, value):
         self.play_button.img_index = 0
         self.audio_file = value.strip() if value else ""
-        self.audio = AudioSegment.from_file(self.audio_file) if self.audio_file else None
+        self.audio = audio_from_file(self.audio_file, sampling_rate=SAMPLING_RATE) if self.audio_file else None
 
     def clear_data(self):
         self.audio_file = ""
@@ -622,6 +611,7 @@ class EditRow(GridLayout):
 class TranscriptRow(RecycleDataViewBehavior, BoxLayout):
     row_id = StringProperty()
     speaker = StringProperty()
+    speaker_confidence = NumericProperty()
     text = StringProperty()
     original_start = NumericProperty()
     original_end = NumericProperty()
@@ -655,9 +645,10 @@ class TranscriptRow(RecycleDataViewBehavior, BoxLayout):
         self.index = index
         return super().refresh_view_attrs(rv, index, data)
     
-    def set_line(self, line):
-        self.row_id = line['row_id']
+    def from_dict(self, line):
+        self.row_id = line.get('id', line.get('row_id', ''))
         self.speaker = line['speaker']
+        self.speaker_confidence = line['speaker_confidence']
         self.original_start = line['original_start']
         self.original_end = line['original_end']
         self.modified_start = line['modified_start']
@@ -667,6 +658,22 @@ class TranscriptRow(RecycleDataViewBehavior, BoxLayout):
         self.selectable = line['selectable']
         self.selected = line['selected']
         self.export = line['export']
+    
+    def to_dict(self):
+        line = {}
+        line['row_id'] = self.row_id
+        line['speaker'] = self.speaker
+        line['speaker_confidence'] = self.speaker_confidence
+        line['original_start'] = self.original_start
+        line['original_end'] = self.original_end
+        line['modified_start'] = self.modified_start
+        line['modified_end'] = self.modified_end
+        line['text'] = self.text
+
+        line['selectable'] = self.selectable
+        line['selected'] = self.selected
+        line['export'] = self.export 
+
 
 class TranscriptScreen(Widget):
 
@@ -759,7 +766,7 @@ class TranscriptScreen(Widget):
 
     def scroll_into_view(self, ndx, key):
 
-        def flarm(*_):
+        def f(*_):
             rv = self.transcript_view
             va = self.transcript_view.view_adapter
             lm = self.transcript_view.layout_manager
@@ -805,7 +812,7 @@ class TranscriptScreen(Widget):
                 elif ndx == len(self.lines) - 1 and rv.scroll_y > 0:
                     rv.scroll_y = 0
 
-        Clock.schedule_once(flarm)
+        Clock.schedule_once(f)
 
     def split_row(self, *args):
         ndx = self.edit_row.active_ndx
@@ -851,6 +858,11 @@ class TranscriptScreen(Widget):
         self.edit_row.end_time.base_time = None
         self.edit_row.end_time.time_value = row['modified_end']
 
+        def f(_):
+            self.transcript_view.focus = True
+            self.transcript_view.layout_manager.select_node(ndx+1)
+            self.scroll_into_view(ndx+1, "down")
+        Clock.schedule_once(f)
 
     def collapse_row(self, *args):
         ndx = self.edit_row.active_ndx
@@ -873,6 +885,9 @@ class TranscriptScreen(Widget):
             row['modified_end'] = next_row['modified_end']
             row['original_end'] = next_row['original_end']
             self.remove_row(next_ndx)
+            def f(_):
+                self.transcript_view.focus = True
+            Clock.schedule_once(f)
 
     @mainthread
     def dismiss_popup(self):
@@ -900,7 +915,7 @@ class TranscriptScreen(Widget):
             dialog.progress.value = prog
 
     def calculate_size(self, line):
-        self.row_for_height.set_line(line)
+        self.row_for_height.from_dict(line)
         self.row_for_height.width = self.width
         self.row_for_height.text_widget.texture_update()
         return (self.row_for_height.size[0], self.row_for_height.text_widget.texture_size[1])
@@ -937,6 +952,9 @@ class TranscriptScreen(Widget):
             itm['size'] = self.calculate_size(itm)
 
             return itm
+
+        if self.edit_row.active_ndx is not None:
+            self.transcript_view.layout_manager.deselect_node(self.edit_row.active_ndx)
 
         self.edit_row.clear_data()
 
@@ -975,12 +993,12 @@ class TranscriptScreen(Widget):
             bytes_received = filesize - bytes_remaining
             self.update_progress(dialog, text=None, prog=(bytes_received/filesize) * 1000)
 
-        def on_segment(text, num, length) -> bool:
+        def on_segment(text, num, length, percent_complete) -> bool:
             if not length:
                 num = 0
                 length = 1
 
-            self.update_progress(dialog, text=text, prog = 700 + ((num/length)*100))
+            self.update_progress(dialog, text=text, prog = percent_complete * 1000)
 
             return self.stop.is_set() 
 
@@ -990,7 +1008,7 @@ class TranscriptScreen(Widget):
             self.update_progress(dialog, text = f'Downloading {self.video_edit.text.strip()}', prog = 0)
             vid = self.video_edit.text.strip()
             is_short = self.short_checkbox.active
-            audio_file, _, yt = get_youtube_audio(vid, path=download_dir(), is_short=is_short, progress_callback=on_progress)
+            audio_file, _, yt = get_youtube_audio(vid, filename=download_dir(), is_short=is_short, progress_callback=on_progress)
 
         transcript_segments = None
         audio = None
@@ -999,7 +1017,7 @@ class TranscriptScreen(Widget):
         if audio_file and not self.stop.is_set():
             self.update_progress(dialog, text = f'Transcribing {yt.title}', prog=0)
             transcript_segments, audio = transcribe(audio_file)
-            self.update_progress(dialog, prog=600)
+            self.update_progress(dialog, prog=0)
 
         flat_subs = None
         if audio and transcript_segments and not self.stop.is_set():
@@ -1009,7 +1027,7 @@ class TranscriptScreen(Widget):
 
         transcript = None
         if flat_subs and not self.stop.is_set():
-            self.update_progress(dialog, text=f'Loading data', prog=800)
+            self.update_progress(dialog, text=f'Loading data', prog=0)
             transcript = {}
             transcript["title"] = yt.title
             transcript["YouTubeID"] = vid
@@ -1017,16 +1035,9 @@ class TranscriptScreen(Widget):
             transcript["transcription"] = []
             length = len(flat_subs)
             for segment in flat_subs:
-                new_row = {}
-                new_row['row_id'] = segment.id
-                new_row['speaker'] = segment.speaker
-                new_row['original_start'] = segment.start
-                new_row['original_end'] = segment.end
-                new_row['modified_start'] = segment.start
-                new_row['modified_end'] = segment.end
-                new_row['text'] = HanziConv.toSimplified(segment.text)
+                new_row = segment.to_dict()
                 transcript["transcription"].append(new_row)
-                self.update_progress(dialog, prog = 800 + ((len(transcript["transcription"])/length)*100))
+                self.update_progress(dialog, prog = ((len(transcript["transcription"])/length)*1000))
 
         if transcript and not self.stop.is_set():
             self.filename = ""
@@ -1140,11 +1151,15 @@ class TranscriptScreen(Widget):
                 if new_end >= next_row['modified_end']:
                     self.remove_row(next_ndx)
         
-        nr, new_ndx = self.next_row(editrow.active_ndx)
         self.transcript_view.refresh_from_data()
-        if nr:
-            self.transcript_view.layout_manager.select_node(new_ndx)            
-            self.scroll_into_view(new_ndx, "down")
+        def f(_):
+            self.transcript_view.focus = True
+        Clock.shedule_once(f)
+        # I'm experimenting with not moving on update        
+        # nr, new_ndx = self.next_row(editrow.active_ndx)
+        # if nr:
+        #     self.transcript_view.layout_manager.select_node(new_ndx)            
+        #     self.scroll_into_view(new_ndx, "down")
 
 
 
@@ -1167,28 +1182,18 @@ class TranscriptScreen(Widget):
         if not filename:
             return
         self.dirty = False
-        audio, sr = self.edit_row.audio if export else [ None, 0 ]
 
-        transcript = {}
-        transcript["title"] = self.title_label.text.strip()
-        transcript["YouTubeID"] = self.video_edit.text.strip()
-        transcript["AudioFile"] = self.edit_row.audio_file
-        transcript["transcription"] = self.lines
-
-        def dest(id: str, speaker: str) -> str:
-            p = os.path.join(path, "audio_samples", self.video_edit.text.strip(), speaker.strip().lower())
-            if not os.path.exists(p):
-                os.makedirs(p)
-            return str(os.path.join(p, f'{self.video_edit.text.strip()}.{id}.wav'))
-
-        for kid in self.lines:
-            if export and kid['export']:
-                seg = AudioSegment(audio, kid['modified_start'], kid['modified_end'], sr)
-                seg.save(dest(kid['row_id'], kid['speaker_name']))
-
-        with open(os.path.join(path, filename), 'w', encoding='utf8') as stream:
-            json.dump(transcript, stream, indent = 2, ensure_ascii=False)
-            stream.write("\n")
+        save_results(
+            self.title_label.text.strip(),
+            self.video_edit.text.strip(),
+            self.edit_row.audio_file,
+            str(os.path.join(path, "audio_samples")),
+            str(os.path.join(path, filename)),
+            True,
+            export,
+            self.edit_row.audio,
+            self.lines
+        )
 
         save_finished()
 
