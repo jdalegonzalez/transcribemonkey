@@ -193,7 +193,7 @@
     align: 'left'
     canvas.before: 
         Color: 
-            rgba: .12, .12, .13, 1
+            rgba: (.12, .12, .13, 1) if not self.focus else (.2, .2, .23, 1)
         Rectangle: 
             pos:  self.pos
             size: self.size
@@ -236,7 +236,7 @@
             font_size: 35
             multiline: False
             text_validate_unfocus: False
-            on_focus: root.time_value = float(self.text) if not self.focus else root.time_value
+            on_focus: root.time_value = float(self.text) if self.text and not self.focus else root.time_value
             input_filter: 'float'
             write_tab: False
             halign: root.align
@@ -269,16 +269,18 @@
         cols: 3
         rows: 1
         size_hint: 1, None
+        spacing: 10, 0
         TimeEdit:
             id: id_start_time
             label: "start"
-            size_hint: .16, None
-            validate: root.validate_time if root.validate_time else None
+            size_hint: None, None
+            width: 270
+            validate: root.validate_time
             step: .01
             align: 'center'
         BoxLayout:
             orientation: "vertical"
-            size_hint: .68, None
+            size_hint: .64, None
             Label:
                 id: id_time
                 text: "" if id_start_time.time_value is None or id_end_time.time_value is None else tstamp_f.format(round(id_start_time.time_value + ((id_audio_slider.value/id_audio_slider.max)*(id_end_time.time_value - id_start_time.time_value)),2))
@@ -299,8 +301,9 @@
         TimeEdit:
             id: id_end_time
             label: "end"
-            size_hint: .16, None
-            validate: root.validate_time if root.validate_time else None
+            size_hint: None, None
+            width: 270
+            validate: root.validate_time
             step: .01
             align: 'center'
 
@@ -313,9 +316,11 @@
         GridLayout:
             cols: 1
             rows: 3
-            size_hint: .18, 1
+            size_hint: None, 1
+            width: 270
             Spinner:
-                size_hint: 1, None
+                size_hint: None, None
+                width: 270
                 height: 90
                 id: id_speaker
                 text: ''
@@ -326,7 +331,8 @@
                 size_hint: 1, 1
                 text: ''
             MenuBar:
-                size_hint: 1, None
+                size_hint: None, None
+                width: 270
                 height: 90
                 rows: 1
                 cols: 2
@@ -366,7 +372,7 @@
             id: id_sentence
             text: ''
             text_size: self.size
-            size_hint: .85, 1
+            size_hint: 1, 1
             font_size: 30
             font_name: 'fonts/NotoSansSC-Medium.otf'
         
@@ -469,6 +475,7 @@
     transcript_view: id_transcription
     edit_row: id_editrow
     video_edit: id_video
+    episode_edit: id_episode
     transcribe_btn: id_transcribe
     title_label: id_title
     short_checkbox: id_is_short
@@ -483,7 +490,7 @@
                 Rectangle:
                     size: self.size
                     pos: self.pos
-            cols: 7
+            cols: 8
             Label:
                 id: lbl_video
                 text: 'YouTube ID'
@@ -495,6 +502,14 @@
                 padding: 10, self.height / 2.0 - (self.line_height / 2.0) * len(self._lines), 0, 1
                 on_text: root.on_text(*args)
                 multiline: False
+                size_hint_x: .4
+            TextInput:
+                id: id_episode
+                text: ''
+                font_size: 40
+                padding: 10, self.height / 2.0 - (self.line_height / 2.0) * len(self._lines), 0, 1
+                multiline: False
+                size_hint_x: .4
             CheckBox:
                 canvas.before:
                     Color:
@@ -569,23 +584,25 @@
                 id: id_editrow
             BoxLayout:
                 size_hint: .04, None
-                height: (self.width - self.padding[0] - self.padding[2]) * 2 + 10
+                height: 100
                 pos_hint: {'center_y': .5}
                 padding: 10, 0, 10, 0
                 spacing: 5
                 orientation: "vertical"
                 CircleButton:
-                    size_hint: 1, None
+                    size_hint: None, None
                     text: "-"
-                    height: self.parent.width - self.parent.padding[0] - self.parent.padding[2]
+                    width: 50
+                    height: 50
                     bold: True
                     font_size: 50
                     on_release: root.collapse_row(*args)
                     disabled: id_editrow.active_ndx is None
                 CircleButton:
-                    size_hint: 1, None
+                    size_hint: None, None
+                    width: 50
+                    height: 50
                     text: "+"
-                    height: self.parent.width - self.parent.padding[0] - self.parent.padding[2]
                     bold: True
                     font_size: 50
                     on_release: root.split_row(*args)

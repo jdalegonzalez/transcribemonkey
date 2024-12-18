@@ -35,6 +35,7 @@ from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.floatlayout import FloatLayout
 from kivy.uix.button import Button
 from kivy.uix.recycleview.views import RecycleDataViewBehavior
+from kivy.uix.behaviors.focus import FocusBehavior
 from kivy.uix.textinput import TextInput
 from kivy.graphics import Color, RoundedRectangle, Ellipse, Scale, Translate, PushMatrix, PopMatrix
 from kivy.clock import mainthread
@@ -60,6 +61,44 @@ SAMPLING_RATE = 44100
 _is_osx = sys.platform == 'darwin'
 app = None
 
+class TranscribeEvents(EventDispatcher):
+    def __init__(self, **kwargs):
+        self.register_event_type('on_export_checked')
+        self.register_event_type('on_rowselect')
+        self.register_event_type('on_update_request')
+        self.register_event_type('on_update_escape')
+        self.register_event_type('on_play_stop_request')
+        super(TranscribeEvents, self).__init__(**kwargs)
+
+    def export_checked(self, ndx, active):
+        self.dispatch('on_export_checked', ndx, active)
+
+    def row_selected(self, ndx):
+        self.dispatch('on_rowselect', ndx)
+
+    def update_request(self, widget):
+        self.dispatch('on_update_request', widget)
+
+    def update_escape(self, widget):
+        self.dispatch('on_update_escape', widget)
+
+    def play_stop_request(self, widget):
+        self.dispatch('on_play_stop_request', widget)
+
+    def on_export_checked(self, *_):
+        pass
+    def on_rowselect(self, *_):
+        pass
+    def on_update_request(self, *_):
+        pass
+    def on_update_escape(self, *_):
+        pass
+    def on_play_stop_request(self, *_):
+        pass
+
+events = TranscribeEvents()
+
+
 class SentenceInput(TextInput):
 
     meta_key_map = {
@@ -69,6 +108,10 @@ class SentenceInput(TextInput):
         'cursor_down': 'cursor_down',
     }
 
+    def __init__(self, **kwargs):
+        self.burn_space = True
+        super().__init__(**kwargs)
+    
     def on_triple_tap(self, *args):
         # We're doing this twice.  Once to get it set and
         # once to get it displayed.
@@ -76,18 +119,37 @@ class SentenceInput(TextInput):
     
     def keyboard_on_key_down(self, window, keycode, text, modifiers):
         modifiers = set(modifiers)
-        key, _ = keycode
+        key, name = keycode
         is_shortcut = (
             modifiers == {'ctrl'}
             or _is_osx and modifiers == {'meta'}
         )
+
         if is_shortcut:
             k = SentenceInput.meta_key_map.get(self.interesting_keys.get(key))
             if k:
                 self.do_cursor_movement(k, is_shortcut=True)
                 return
-            
+        elif modifiers == {'shift'} and name == 'enter':
+            events.update_request()
+            return
+        elif modifiers == {'shift'} and name == 'spacebar':
+            self.burn_space = True
+            events.play_stop_request(self)
+            return
+        elif name == 'escape':
+            events.update_escape(self)
+            return
+        
         return super().keyboard_on_key_down(window, keycode, text, modifiers)
+
+    def keyboard_on_textinput(self, window, text):
+        burn_space = self.burn_space
+        self.burn_space = False
+        if text == ' ' and burn_space:
+            return
+        super().keyboard_on_textinput(window, text)
+
 
     def do_cursor_movement(self, action, control=False, alt=False, is_shortcut=False):
 
@@ -267,6 +329,10 @@ class RoundSvgButtonWidget(Button):
         self.down_color_ins.rgba = self.down_color if state == "down" else (0, 0, 0, 0)
         return True
     
+    def click(self, touch=None):
+        self.dispatch("on_click", touch.pos if touch else None)
+        self.next_image()
+
     def on_touch_up(self, touch):
         # For some reason, the default button behavior generates
         # two touch up events.  So, we're going to hijhack it and
@@ -274,8 +340,7 @@ class RoundSvgButtonWidget(Button):
         if self.state == "down":
             self.state = "normal"
             if self.collide_point(*touch.pos):
-                self.next_image()
-                self.dispatch("on_click", touch.pos)
+                self.click()
         return True
     
     def on_backround_color(self, _, value):
@@ -306,37 +371,22 @@ class RoundRectSvgButtonWidget(RoundSvgButtonWidget):
     def bg_class(self):
         return RoundedRectangle
 
-class TranscribeEvents(EventDispatcher):
-    def __init__(self, **kwargs):
-        self.register_event_type('on_export_checked')
-        self.register_event_type('on_rowselect')
-        self.register_event_type('on_update_request')
-        super(TranscribeEvents, self).__init__(**kwargs)
-
-    def export_checked(self, ndx, active):
-        self.dispatch('on_export_checked', ndx, active)
-
-    def row_selected(self, ndx):
-        self.dispatch('on_rowselect', ndx)
-
-    def update_request(self, editrow):
-        self.dispatch('on_update_request', editrow)
-
-    def on_export_checked(self, _ndx, _active):
-        pass
-    def on_rowselect(self, _):
-        pass
-    def on_update_request(self, _):
-        pass
-
-events = TranscribeEvents()
-
-class TimeEdit(BoxLayout):
+class TimeEdit(FocusBehavior, BoxLayout):
     time_label = ObjectProperty()
     adjust_slider = ObjectProperty()
     time_value = NumericProperty(None, allownone=True)
     base_time = NumericProperty(None, allownone=True)
     step = NumericProperty(.01)
+
+    def keyboard_on_key_down(self, _kb, keycode, text, modifiers):
+        if not super().keyboard_on_key_down(_kb, keycode, text, modifiers):
+            code, key = keycode
+            if key == 'left':
+                self.decrease_time()
+            elif key == 'right':
+                self.increase_time()
+            elif key == 'spacebar':
+                events.play_stop_request(self)
 
     def slider_changed(self, _, touch):
         
@@ -372,7 +422,7 @@ class TimeEdit(BoxLayout):
             offset = max(self.adjust_slider.min, min(val - self.base_time, self.adjust_slider.max))
             self.adjust_slider.value = offset
 
-    def decrease_time(self, _):
+    def decrease_time(self, *_):
         time_value = round(self.time_value - self.step, 2) if \
             self.time_value is not None else 0
         
@@ -383,7 +433,7 @@ class TimeEdit(BoxLayout):
         if not callable(val) or val(self, time_value):
             self.time_value = time_value
 
-    def increase_time(self, _):
+    def increase_time(self, *_):
         time_value = round(self.time_value + self.step, 2) if \
             self.time_value is not None else 0
 
@@ -503,6 +553,7 @@ class EditRow(GridLayout):
     time_label = ObjectProperty()
 
     def __init__(self, **kwargs):
+        events.bind(on_play_stop_request=self.on_play_stop_request)
         super().__init__(**kwargs)
         self.clear_data()
 
@@ -512,9 +563,15 @@ class EditRow(GridLayout):
         rat = sr if sr else 1
         return len(a) / rat
     
+    def on_play_stop_request(self, *_):
+        self.play_stop()
+
+    def play_stop(self, *_):
+        self.play_button.click()
+
     def play_stop_click(self, widget, _):
 
-        start_playing = widget.img_index == 1
+        start_playing = widget.img_index == 0
 
         if not start_playing:
             self.segment.stop()
@@ -682,11 +739,11 @@ class TranscriptRow(RecycleDataViewBehavior, BoxLayout):
 
 
 class TranscriptScreen(Widget):
-    episode = StringProperty()
     title_label = ObjectProperty()
     transcript_view = ObjectProperty()
     edit_row = ObjectProperty()
     video_edit = ObjectProperty()
+    episode_edit = ObjectProperty()
     transcribe_btn = ObjectProperty()
     short_checkbox = ObjectProperty()
     lines = ListProperty([])
@@ -703,6 +760,7 @@ class TranscriptScreen(Widget):
 
         events.bind(on_rowselect=self.on_rowselect)
         events.bind(on_update_request=self.on_update_request)
+        events.bind(on_update_escape=self.on_update_escape)
         events.bind(on_export_checked=self.on_export_checked)
         self.transcribe_canceled = False
         self._popup = None
@@ -765,6 +823,8 @@ class TranscriptScreen(Widget):
                 nr, new_ndx = self.next_row(self.edit_row.active_ndx)
         elif keyname == "end":
             nr, new_ndx = (self.lines[len(self.lines) - 1], len(self.lines) - 1)            
+        elif keyname == "enter":
+            self.edit_row.sentence.focus = True
 
         if nr:
             self.transcript_view.layout_manager.select_node(new_ndx)
@@ -865,9 +925,10 @@ class TranscriptScreen(Widget):
         self.edit_row.end_time.time_value = row['modified_end']
 
         def f(_):
-            self.transcript_view.focus = True
+            self.transcript_view.children[0].focus = True
             self.transcript_view.layout_manager.select_node(ndx+1)
             self.scroll_into_view(ndx+1, "down")
+
         Clock.schedule_once(f)
 
     def collapse_row(self, *args):
@@ -891,8 +952,10 @@ class TranscriptScreen(Widget):
             row['modified_end'] = next_row['modified_end']
             row['original_end'] = next_row['original_end']
             self.remove_row(next_ndx)
+
             def f(_):
-                self.transcript_view.focus = True
+                self.transcript_view.children[0].focus = True
+
             Clock.schedule_once(f)
 
     @mainthread
@@ -963,9 +1026,9 @@ class TranscriptScreen(Widget):
             self.transcript_view.layout_manager.deselect_node(self.edit_row.active_ndx)
 
         self.edit_row.clear_data()
-        self.episode = transcript.get('episode','')
         self.title_label.text = transcript.get("title", '')
         self.video_edit.text = transcript.get("YouTubeID", '')
+        self.episode_edit.text = str(transcript.get('episode',''))
         self.edit_row.audio_file = transcript.get("AudioFile", '')
         self.lines = [ conv(itm) for itm in transcript["transcription"] ] if transcript["transcription"] else []
 
@@ -1116,7 +1179,14 @@ class TranscriptScreen(Widget):
     def on_export_checked(self, evt, index:int, checked:bool):
         self.lines[index]['export'] = checked
 
-    def on_update_request(self, _, editrow):
+    def on_update_escape(self, *_):
+        def f(_):
+            self.transcript_view.children[0].focus = True
+        Clock.schedule_once(f, .5)
+
+    def on_update_request(self, _, widget):
+        editrow = widget if widget else self.edit_row
+
         # The user has requested that the row be updated.
         row = self.lines[editrow.active_ndx]
         if row['speaker'] != editrow.speaker.text:
@@ -1161,8 +1231,8 @@ class TranscriptScreen(Widget):
         
         self.transcript_view.refresh_from_data()
         def f(_):
-            self.transcript_view.focus = True
-        Clock.shedule_once(f)
+            self.transcript_view.children[0].focus = True
+        Clock.schedule_once(f)
         # I'm experimenting with not moving on update        
         # nr, new_ndx = self.next_row(editrow.active_ndx)
         # if nr:
@@ -1193,7 +1263,7 @@ class TranscriptScreen(Widget):
 
         save_results(
             self.title_label.text.strip(),
-            self.episode,
+            self.episode_edit.text.strip(),
             self.video_edit.text.strip(),
             self.edit_row.audio_file,
             str(os.path.join(path, "audio_samples")),
@@ -1231,8 +1301,7 @@ def get_arguments():
     :return: The parsed arguments from the command line
     """
     parser = argparse.ArgumentParser(
-        description="Creates a transcription of a Youtube video",
-        usage="transcribe -v <video id> -t <huggingface auth token> [-o name for audio files]"
+        description="Creates a transcription of a Youtube video"
     )
     parser.add_argument(
         "-t", "--transcript", 
