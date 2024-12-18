@@ -18,8 +18,10 @@ __pycache__
 # in git
 trained-speakerbox/**
 transcripts/*.json
+transcripts/*.docx
 audio_out/
 chunked-audio/
 speakerbox/
 *.json
+~*.docx
 

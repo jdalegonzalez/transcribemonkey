@@ -16,7 +16,13 @@ import xml.etree.ElementTree as ET
 
 from pytubefix import Stream
 
-from transcribe import get_youtube_audio, transcribe, get_segments, save as save_results, audio_from_file
+from transcribe import (
+    get_youtube_audio,
+    transcribe,
+    get_segments,
+    save as save_results,
+    audio_from_file
+)
 
 import kivy
 kivy.require('2.3.0')
@@ -676,7 +682,7 @@ class TranscriptRow(RecycleDataViewBehavior, BoxLayout):
 
 
 class TranscriptScreen(Widget):
-
+    episode = StringProperty()
     title_label = ObjectProperty()
     transcript_view = ObjectProperty()
     edit_row = ObjectProperty()
@@ -948,7 +954,7 @@ class TranscriptScreen(Widget):
             itm['selectable'] = itm.get('selectable', True)
             itm['selected'] = itm.get('selected', False)
             itm['export'] = itm.get('export', True)
-
+    
             itm['size'] = self.calculate_size(itm)
 
             return itm
@@ -957,10 +963,10 @@ class TranscriptScreen(Widget):
             self.transcript_view.layout_manager.deselect_node(self.edit_row.active_ndx)
 
         self.edit_row.clear_data()
-
-        self.title_label.text = transcript["title"] if transcript["title"] else ""
-        self.video_edit.text = transcript["YouTubeID"] if transcript["YouTubeID"] else ""
-        self.edit_row.audio_file = transcript["AudioFile"] if transcript["AudioFile"] else ""
+        self.episode = transcript.get('episode','')
+        self.title_label.text = transcript.get("title", '')
+        self.video_edit.text = transcript.get("YouTubeID", '')
+        self.edit_row.audio_file = transcript.get("AudioFile", '')
         self.lines = [ conv(itm) for itm in transcript["transcription"] ] if transcript["transcription"] else []
 
         selected_index = None
@@ -1021,18 +1027,20 @@ class TranscriptScreen(Widget):
 
         flat_subs = None
         if audio and transcript_segments and not self.stop.is_set():
-            flat_subs = get_segments(vid, transcript_segments, audio, on_seg=on_segment)
+            episode, flat_subs = get_segments(vid, transcript_segments, audio, on_seg=on_segment, episode=self.episode)
 
         Logger.parent.removeHandler(self.handler)
 
         transcript = None
         if flat_subs and not self.stop.is_set():
             self.update_progress(dialog, text=f'Loading data', prog=0)
-            transcript = {}
-            transcript["title"] = yt.title
-            transcript["YouTubeID"] = vid
-            transcript["AudioFile"] = audio_file
-            transcript["transcription"] = []
+            transcript = {
+                'title': yt.title,
+                'episode': episode,
+                'YouTubeID': vid,
+                'AudioFile': audio_file,
+                'transcription': []
+            }
             length = len(flat_subs)
             for segment in flat_subs:
                 new_row = segment.to_dict()
@@ -1185,6 +1193,7 @@ class TranscriptScreen(Widget):
 
         save_results(
             self.title_label.text.strip(),
+            self.episode,
             self.video_edit.text.strip(),
             self.edit_row.audio_file,
             str(os.path.join(path, "audio_samples")),

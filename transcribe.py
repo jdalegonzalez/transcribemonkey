@@ -5,8 +5,12 @@ import sys
 import json
 import math
 import logging
+import html
+import datetime
 
-from typing import Optional, TypedDict, Union
+from word2number import w2n
+
+from typing import Optional, TypedDict, Union, Iterable
 
 from hanziconv import HanziConv
 
@@ -15,15 +19,16 @@ from transformers import pipeline
 
 import stable_whisper
 import faster_whisper
-from faster_whisper.transcribe import Segment
+from faster_whisper.transcribe import Segment, TranscriptionInfo
 
 import torch
 
-import librosa
 import soundfile as sf
 
 from pytubefix import YouTube
 from pytubefix.cli import on_progress
+
+from docxtpl import DocxTemplate
 
 ##### Constants #####
 DEVICE = "cpu"
@@ -32,6 +37,7 @@ MODEL_NAME = "large-v3"
 SAMPLING_RATE = 16000 # 22050 #
 #####################
 
+    
 class SpeakerGuess(TypedDict):
     score: float
     label: str
@@ -49,6 +55,15 @@ class SegmentDict(TypedDict):
     selected: bool
     export: bool
 
+def to_minutes_seconds(seconds:float) -> str:
+    secs = round(seconds)
+    minute_part = secs // 60
+    second_part = secs % 60
+    return f'{minute_part:02}:{second_part:02}'
+
+AudioType = tuple[np.ndarray, float]
+TranscriptionType = tuple[Iterable[Segment], TranscriptionInfo]
+
 class SubSegment():
     """
     When faster-whisper segments audio, in many cases, the segments span
@@ -63,7 +78,7 @@ class SubSegment():
         start: float,
         end: float,
         text: str,
-        audio: tuple[np.ndarray, float],
+        audio: AudioType,
         speaker: Optional[str] = None,
         speaker_confidence: Optional[float] = None,
         selectable: Optional[bool] = True,
@@ -75,7 +90,7 @@ class SubSegment():
         self._start: float = float(start)
         self._end: float = float(end)
         self.text: str = text
-        self.audio: tuple[np.ndarray, float] = audio
+        self.audio: AudioType = audio
         self.speaker: Optional[str] = speaker
         self.speaker_confidence: Optional[float] = speaker_confidence
         self.selectable = selectable
@@ -105,7 +120,7 @@ class SubSegment():
         result['original_end'] = self.end
         result['modified_start'] = self.start
         result['modified_end'] = self.end
-        result['text'] = HanziConv.toSimplified(self.text)
+        result['text'] = HanziConv.toSimplified(self.text.strip())
 
         result['selectable'] = self.selectable
         result['selected'] = self.selected
@@ -117,7 +132,7 @@ class SubSegment():
         self.speaker = guess['label'].capitalize()
         self.speaker_confidence = guess['score']
 
-    def slice_audio(audio:tuple[np.ndarray, float], start:float, end:float) -> tuple[np.ndarray, float]:
+    def slice_audio(audio:AudioType, start:float, end:float) -> AudioType:
         """
         Class function for slicing a piece of audio given a start and stop.
         There is an instance version that operates on an instance's start, stop
@@ -128,7 +143,7 @@ class SubSegment():
         result = audio_data[int(start * sr):int(end * sr)]
         return result, sr
 
-    def slice(self) -> tuple[np.ndarray, float]:
+    def slice(self) -> AudioType:
         """
         Returns the section of audio that this SubSegment represents
 
@@ -143,7 +158,7 @@ class SubSegment():
     def file_dest(self, path:str=""):
         return SubSegment.static_file_dest(self.yt_id, self.id, path=path)
     
-    def save_audio_slice(dest: str, audio:tuple[np.ndarray, float], start: float, end: float) -> None:
+    def save_audio_slice(dest: str, audio:AudioType, start: float, end: float) -> None:
         audio_slice, sr = SubSegment.slice_audio(audio, start, end)
         sf.write(dest, audio_slice, sr)
 
@@ -156,14 +171,14 @@ class SubSegment():
         if self.speaker is None:
             speak_str = "Speaker: "
         elif self.speaker.strip():
-            speak_str = f'{self.speaker.strip()} ({round(self.speaker_confidence, 4)}): '
+            speak_str = f'{self.speaker.strip()} ({round(self.speaker_confidence, 4):.4f}): '
         return speak_str
     
     def __repr__(self):
         return f'[id: {self.id}, start: {self.start}, end: {self.end}, text: "{self.text}", speaker: "{self.speaker_string()}"]'
 
     def __str__(self):
-        return f'[{self.id}] {self.speaker_string()}[{self.start}] {self.text} [{self.end}]'
+        return f'[{to_minutes_seconds(self.start)}] {self.speaker_string()}{self.text.strip()}'
     
 def get_arguments():
     """
@@ -175,10 +190,17 @@ def get_arguments():
         description="Creates a transcription of a Youtube video"
     )
     parser.add_argument(
-        "-v", "--video", 
-        help="The Youtube ID for the video to be transcribed",
-        dest='video_id',
-        required=True
+        "-d", "--doc", 
+        help="Create a word document from a json file.  The -t argument must also be passed.",
+        dest='word_doc',
+        default=False,
+        action='store_true'
+    )
+    parser.add_argument(
+        "-e", "--episode",
+        help="The episode number, if there is one (and you know it).",
+        dest="episode",
+        default=""
     )
     parser.add_argument(
         "-g", "--segment-folder",
@@ -187,15 +209,15 @@ def get_arguments():
         default=""
     )
     parser.add_argument(
+        '-l', '--log_level',
+        help="The python logging level for output",
+        dest='log_level',
+        default="WARNING"
+    )
+    parser.add_argument(
         "-o", "--out",
         help="The path output audio file.  The default is ./<youtube_id>.mp4",
         dest="filename",
-        default=""
-    )
-    parser.add_argument(
-        "-t", "--transcript",
-        help="If present, not the literal 'false' and not ending in .json, we'll save the json at <transcript_json>/<youtube_id>.transcription.json.  If present and pointing to something ending in .json, we'll save to <transcript_json>.",
-        dest="transcript_json",
         default=""
     )
     parser.add_argument(
@@ -206,22 +228,36 @@ def get_arguments():
         action='store_true'
     )
     parser.add_argument(
-        '-l', '--log_level',
-        help="The python logging level for output",
-        dest='log_level',
-        default="WARNING"
+        "-t", "--transcript",
+        help="If we've been asked to transcribe, this is either the path create the json with the default name or, if the argument ends in .json, the full path and name of the file.  The default name is <transcript_json>/<youtube_id>.transcription.json. If we're creating the word doc, it's the full path to the json file or the json folder.",
+        dest="transcript_json",
+        default=""
     )
-    return parser.parse_args()
+    parser.add_argument(
+        "-v", "--video", 
+        help="The Youtube ID for the video to be transcribed",
+        dest='video_id',
+        default=None
+    )
 
-def extract_features(audio_file: tuple[np.ndarray, float] | str):
-    # Load audio file
-    if type(audio_file) == str:
-        y, sr = librosa.load(audio_file)
-    else:
-        y, sr = audio_file
+    args = parser.parse_args()
+    if args.video_id is None and not args.word_doc:
+        parser.error("Youtube ID (-v, --video) is required.")
 
-    # Extract mel
-    return np.mean(librosa.feature.melspectrogram(y=y, sr=sr).T,axis=0)
+    if args.word_doc:
+        exists = args.transcript_json and os.path.exists(args.transcript_json)
+        if not exists:
+            parser.error("A path to the json transcript (-t, --transcript) is required when generating a word doc")
+        is_file = os.path.isfile(args.transcript_json)
+        if not is_file and args.video_id is None:
+            parser.error("A full path to a json file is required when generating a doc if you don't also supply a video ID")
+        if not is_file:
+            new_file = os.path.join(args.transcript_json, f'{args.video_id}.transcript.json')
+            if not os.path.exists(new_file) or not os.path.isfile(new_file):
+                parser.error(f'The transcript {new_file} does not exist')
+            args.transcript_json = new_file
+
+    return args
 
 def get_youtube_audio(
         video_id: str,
@@ -278,14 +314,53 @@ def find_numeral_symbol_tokens(tokenizer):
             numeral_symbol_tokens.append(token_id)
     return numeral_symbol_tokens
 
+def load_transcript_from_file(filename: str) -> dict:
+    with open(filename, encoding='utf8') as f:
+        transcript = json.load(f)
+    
+    return transcript
+
+def strip_json_suffix(filename):
+    full_suffix = '.transcript.json'
+    json_suffix = '.json'
+    if filename.endswith(full_suffix):
+        return filename[:-len(full_suffix)]
+    if filename.endswith(json_suffix):
+        return filename[:-len(json_suffix)]
+    return filename
+
+def create_word_doc(filename):
+    json_data = load_transcript_from_file(filename)
+    
+    def esc(dta, ele):
+        dta[ele] = html.escape(dta[ele])
+
+    if json_data is not None:
+        esc(json_data, 'title')
+        episode = json_data.get('episode')
+        json_data['footer_title'] = f'Episode {episode}' if episode else json_data['title']
+        for line in json_data['transcription']:
+            line['minutes_seconds'] = to_minutes_seconds(line['modified_start'])
+            esc(line, 'text')
+
+        doc = DocxTemplate("./interview-transcription-template.docx")
+        doc.render(json_data)
+        # We'll just stick the ouput in the same location
+        # as the json
+        save_name = f'{strip_json_suffix(filename)}.docx'
+        doc.save(save_name)
+
+        return save_name
+    
+    return None
+
 def transcribe(
-        audio_file, 
-        model_name=MODEL_NAME,
-        device=DEVICE, 
-        compute_type=COMPUTE_TYPE, 
-        suppress_numerals=True,
-        language="en",
-        print_info=False):
+        audio_file:str, 
+        model_name:str=MODEL_NAME,
+        device:str=DEVICE, 
+        compute_type:str=COMPUTE_TYPE, 
+        suppress_numerals:bool=True,
+        language:str="en") -> tuple[TranscriptionType, AudioType]:
 
     """
     Passes the audio to faster_whisper for transcription and then
@@ -327,10 +402,9 @@ def transcribe(
     # clear gpu vram
     del whisper_model
     torch.cuda.empty_cache()
-    segs, info = transcription
+    _, info = transcription
     
-    if print_info:
-        logging.info(f'Transcribing audio with duration: {info.duration}')
+    logging.info(f'Transcribing audio with duration: {to_minutes_seconds(info.duration)}')
 
     return transcription, [audio_waveform, sr]
 
@@ -371,7 +445,6 @@ def split_segment(
         # but at the expense of REALLY slowing things down.  So,
         # although it feels janky, I'm adding a bunch of special case
         # stuff to do a little cleanup.
-        # - The first segment should start at 0 if it's almost 0
         # - If there is a gap between the last sentence and this one,
         #   we'll assign part of the gap to the end of the previous sentence
         #   and part to this one.
@@ -417,7 +490,12 @@ def split_segment(
     subseg = None
     punc_tuples = tuple(list(punctuation))
 
+    episode = ""
+    add_to_episode = False
     for word in segment.words:
+        if add_to_episode:
+            episode += word.word
+
         if subseg is None:
             sub_id += 1
             subseg = SubSegment(
@@ -432,19 +510,38 @@ def split_segment(
             subseg.text += word.word.replace("Eula", "Ula")
             subseg.end = word.end
 
+        add_to_episode = add_to_episode or (not episode and word.word.strip().lower() == "episode")
         if word.word.endswith(punc_tuples):
             do_append(subseg)
             subseg = None
+            add_to_episode = False
     
     # If we've got a leftover subseg, we'll add it now.
     if subseg:
         do_append(subseg)
         subseg = None
 
-    return result
+    for c in punc_tuples:
+        episode = episode.replace(c, ' ')
+
+    episode = episode.strip()
+    if episode:
+        try:
+            episode = w2n.word_to_num(episode)
+        except ValueError:
+            episode = ""
+
+        logging.info(f'Detected episode: {episode}')
+
+    return (result, episode)
 
 
-def get_segments(video_id, transcript, audio, on_seg=None) -> list[SubSegment]:
+def get_segments(
+        video_id:str,
+        transcript: TranscriptionType,
+        audio:AudioType,
+        on_seg:callable=None,
+        episode:str="") -> tuple[str, list[SubSegment]]:
 
     model = "./trained-speakerbox"
     classifier = pipeline("audio-classification", model=model, device=DEVICE)
@@ -459,7 +556,9 @@ def get_segments(video_id, transcript, audio, on_seg=None) -> list[SubSegment]:
     for segment in segments:
         if quit_looping:
             break
-        subs = split_segment(video_id, audio, segment, flat_subs[-1] if flat_subs else None)
+        subs, potential_episode = split_segment(video_id, audio, segment, flat_subs[-1] if flat_subs else None)
+        if not episode and potential_episode:
+            episode = potential_episode
         cnt = 0
         sub_len = len(subs)
         for subseg in subs:
@@ -490,7 +589,7 @@ def get_segments(video_id, transcript, audio, on_seg=None) -> list[SubSegment]:
         if flat_subs:
             flat_subs[-1].text = flat_subs[-1].text.strip()
 
-    return flat_subs
+    return episode, flat_subs
 
 def audio_from_file(source, sampling_rate = SAMPLING_RATE):
     aud = faster_whisper.decode_audio(source, sampling_rate=sampling_rate)
@@ -498,6 +597,7 @@ def audio_from_file(source, sampling_rate = SAMPLING_RATE):
 
 def save(
         title:str, 
+        episode: str,
         vid:str, 
         audio_filename:str, 
         audio_folder:str, 
@@ -522,6 +622,7 @@ def save(
 
         transcript = {}
         transcript["title"] = title
+        transcript["episode"] = episode
         transcript["YouTubeID"] = vid
         transcript["AudioFile"] = audio_filename
         transcript["transcription"] = []
@@ -540,21 +641,33 @@ def save(
 
 if __name__ == '__main__':
     args = get_arguments()
+
     logging.basicConfig(level=args.log_level.upper())
+
+    if args.word_doc:
+        saved_doc = create_word_doc(args.transcript_json)
+        if saved_doc:
+            print(f'Transcript saved as {saved_doc}')
+        else:
+            logging.error('No document created.')
+        quit()
 
     audio_file, _, yt = get_youtube_audio(args.video_id, is_short=args.is_a_short, filename=args.filename)
 
     logging.info(f'Transcribing: "{yt.title}"')
-    transcript, audio = transcribe(audio_file, print_info=True)
+    transcript, audio = transcribe(audio_file)
 
-    flat_subs = get_segments(args.video_id, transcript, audio)
+    start_trans = datetime.datetime.now()
+    episode, flat_subs = get_segments(args.video_id, transcript, audio, args.episode)
 
     json_path = args.transcript_json
     save_json = bool(json_path and json_path.lower() != 'false')
+
     json_dest = json_path if json_path.endswith('.json') else os.path.join(json_path, f'{args.video_id}.transcript.json')
     should_save_segments = bool(args.audio_folder)
     save(
         yt.title,
+        episode,
         args.video_id,
         audio_file,
         args.audio_folder, 
@@ -565,3 +678,13 @@ if __name__ == '__main__':
     if not should_save_segments and not save_json:
         for seg in flat_subs:
             print(seg)
+    
+    end_trans = datetime.datetime.now()
+    diff = end_trans - start_trans
+    seconds_in_day = 24 * 60 * 60
+    diff_pieces = divmod(diff.days * seconds_in_day + diff.seconds, 60)
+    seconds = diff_pieces[1]
+    diff_pieces = divmod(diff_pieces[0], 60)
+    hours = diff_pieces[0]
+    minutes = diff_pieces[1]
+    logging.info(f"Transcription finished in {hours:02}:{minutes:02}:{seconds:02}")
