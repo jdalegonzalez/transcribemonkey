@@ -38,6 +38,7 @@ class RoundSvgButtonWidget(Button):
 
     def get_activefile(self):
         return self.filelist[self.img_index] if self.img_index < len(self.filelist) else None
+
     def get_img_index(self) -> int:
         return self._img_index
     def set_img_index(self, value: int):

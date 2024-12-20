@@ -5,21 +5,20 @@ import threading
 import sys
 import logging as lg
 
-import sounddevice as sd
-
-
 from typing import Optional
 
 from pytubefix import Stream
 
 from transcribe import (
-    get_youtube_audio,
-    transcribe,
+    audio_from_file,
     get_segments,
+    get_youtube_audio,
     save as save_results,
-    audio_from_file
+    to_minutes_seconds,
+    transcribe,
 )
 from transcribe_events import TranscribeEvents
+from audio_segment import AudioSegment
 
 import kivy
 kivy.require('2.3.0')
@@ -40,12 +39,13 @@ from kivy.logger import Logger
 from kivy.config import Config
 
 from kivy.properties import (
+        AliasProperty,
         BooleanProperty,
         ListProperty,
         NumericProperty,
         ObjectProperty,
-        StringProperty,
-        ObservableList
+        ObservableList,
+        StringProperty
     )
 
 
@@ -81,12 +81,17 @@ class SentenceInput(TextInput):
             or _is_osx and 'meta' in modifiers
         )
         handled = False
-        if events.common_keyboard_events(self, name, is_shortcut, modifiers):
+
+        if modifiers == {'meta'} and name == 's':
+            handled = events.split_join_request(self, 'split')
+        elif modifiers == {'meta'} and name == 'j':
+            handled = events.split_join_request(self, 'join')
+        elif events.common_keyboard_events(self, name, is_shortcut, modifiers):
             handled = True
         elif is_shortcut:
             k = SentenceInput.meta_key_map.get(self.interesting_keys.get(key))
             if k:
-                self.do_cursor_movement(k, alt={'alt'} in modifiers, ctrl={'ctrl'} in modifiers)
+                self.do_cursor_movement(k, control={'ctrl'} in modifiers, alt={'alt'} in modifiers)
                 handled = True
             elif name == "=":
                 start_end = "end" if 'shift' in modifiers else "start"
@@ -98,12 +103,7 @@ class SentenceInput(TextInput):
                 handled = events.play_stop_request(self)
                 self.burn_space = handled
             elif name == "enter":
-                events.update_request(self)
-                handled = True
-        elif modifiers == {'meta'} and name == 's':
-            handled = events.split_join_request(self, 'split')
-        elif modifiers == {'meta'} and name == 'j':
-            handled = events.split_join_request(self, 'join')
+                handled = events.update_request(self)
         elif modifiers == {'shift'} and name == 'enter':
             handled = events.update_request(self)
         elif modifiers == {'shift'} and name == 'spacebar':
@@ -207,7 +207,7 @@ class TimeEdit(FocusBehavior, BoxLayout):
                 events.focus_request(self, 'start_time')
             elif key == 'end':
                 # Set the slider to 90% of max
-                events.slider_pos_request(self, .9)
+                events.slider_pos_request(self, .6)
                 events.focus_request(self, 'end_time')
             else:
                 events.common_keyboard_events(self, key, is_shortcut, modifiers)
@@ -266,84 +266,6 @@ class TimeEdit(FocusBehavior, BoxLayout):
         val = self.validate
         if not callable(val) or val(self, time_value):
             self.time_value = time_value
-
-class AudioSegment():
-    def __init__(self, audio_data, start:float, end:float, sample_rate:int, **kwargs):
-        super().__init__()
-        self._audio_data = audio_data
-        self.sample_rate = sample_rate
-        self.start = start
-        self.end = end
-        self.callback = kwargs.get('callback')
-        self.stream = None
-        self.stream = None
-        self.device = None
-        self.all_frames = None
-
-    @property
-    def segment(self):
-        return self.start, self.end
-
-    @segment.setter
-    def segment(self, start_end):
-        self.start, self.end = start_end
-
-    def stop(self):
-        sd.stop()
-
-    def play(self, offset=0):
-        sd.stop()
-
-        ctx = sd._CallbackContext(loop=False)
-        start = int((self.start + offset) * self.sample_rate)
-        end = int(self.end*self.sample_rate)
-        
-        ctx.frames = ctx.check_data(
-            self._audio_data[start:end],
-            None, self.device
-        )
-
-        if self.all_frames is None:
-            if offset == 0:
-                self.all_frames = ctx.frames
-            else: 
-                # This block is taken from the check_data function in the
-                # context.  The check_data function does a ton of stuff 
-                # though and I don't want to do all of it just to get
-                # the number of frames for the entire sample.
-                import numpy as np
-                dta = np.asarray(self._audio_data[int(self.start * self.sample_rate):end])
-                if dta.ndim < 2:
-                    dta = dta.reshape(-1, 1)
-                self.all_frames, _ = dta.shape
-
-        offset_frame = self.all_frames - ctx.frames
-
-        def clock_func(dt):
-            div = self.all_frames if self.all_frames else 1
-            percent = round((offset_frame + ctx.frame) / div, 2)
-            ended = percent > .99
-            stat = "playing" if sd.get_stream().active else \
-                "ended" if ended else "stopped"
-            self.callback(percent, stat)
-            return sd.get_stream().active            
-        
-        def _callback(outdata, frames, _, status):
-            assert len(outdata) == frames
-            ctx.callback_enter(status, outdata)
-            ctx.write_outdata(outdata)
-            ctx.callback_exit()
-
-        Clock.schedule_interval(clock_func, .02)
-        ctx.start_stream(sd.OutputStream, self.sample_rate, ctx.output_channels,
-                        ctx.output_dtype, _callback, False,
-                        prime_output_buffers_using_stream_callback=False)
-
-    def __repr__(self):
-        return f'[id: {self.id}, start: {self.start}, end: {self.end}, text: "{self.text}", speaker: "{self.speaker}"]'
-
-    def __str__(self):
-        return f'[{self.id}] {self.speaker if self.speaker else "Speaker"}: [{self.start}] {self.text} [{self.end}]'
 
 class ProgressDialog(FloatLayout):
     status = ObjectProperty(None)
@@ -538,6 +460,9 @@ class EditRow(GridLayout):
             events.update_request(return_focus, advance=False)
 
 class TranscriptRow(RecycleDataViewBehavior, BoxLayout):
+    def get_minutes_seconds(self) -> str:
+        return to_minutes_seconds(self.modified_start)
+    
     row_id = StringProperty()
     speaker = StringProperty()
     speaker_confidence = NumericProperty()
@@ -546,6 +471,7 @@ class TranscriptRow(RecycleDataViewBehavior, BoxLayout):
     original_end = NumericProperty()
     modified_start = NumericProperty()
     modified_end = NumericProperty()
+    start_tag = AliasProperty(get_minutes_seconds, None, bind=('modified_start',))
     export = BooleanProperty()
     selected = BooleanProperty()
 
