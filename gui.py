@@ -1,18 +1,14 @@
 import argparse
 import json
-import re
 import os
 import threading
 import sys
 import logging as lg
 
-import numpy as np
-
-from hanziconv import HanziConv
-
 import sounddevice as sd
 
-import xml.etree.ElementTree as ET
+
+from typing import Optional
 
 from pytubefix import Stream
 
@@ -23,81 +19,41 @@ from transcribe import (
     save as save_results,
     audio_from_file
 )
+from transcribe_events import TranscribeEvents
 
 import kivy
 kivy.require('2.3.0')
 
 from kivy.app import App
-from kivy.metrics import dpi2px, NUMERIC_FORMATS
 from kivy.uix.widget import Widget
 from kivy.uix.gridlayout import GridLayout
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.floatlayout import FloatLayout
-from kivy.uix.button import Button
 from kivy.uix.recycleview.views import RecycleDataViewBehavior
 from kivy.uix.behaviors.focus import FocusBehavior
 from kivy.uix.textinput import TextInput
-from kivy.graphics import Color, RoundedRectangle, Ellipse, Scale, Translate, PushMatrix, PopMatrix
 from kivy.clock import mainthread
 from kivy.core.window import Window
 from kivy.uix.popup import Popup
 from kivy.clock import Clock
-from kivy.event import EventDispatcher
 from kivy.logger import Logger
 from kivy.config import Config
 
-from kivy.graphics.svg import Svg
 from kivy.properties import (
-        AliasProperty,
         BooleanProperty,
-        ColorProperty,
         ListProperty,
         NumericProperty,
         ObjectProperty,
         StringProperty,
+        ObservableList
     )
+
 
 SAMPLING_RATE = 44100
 _is_osx = sys.platform == 'darwin'
 app = None
 
-class TranscribeEvents(EventDispatcher):
-    def __init__(self, **kwargs):
-        self.register_event_type('on_export_checked')
-        self.register_event_type('on_rowselect')
-        self.register_event_type('on_update_request')
-        self.register_event_type('on_update_escape')
-        self.register_event_type('on_play_stop_request')
-        super(TranscribeEvents, self).__init__(**kwargs)
-
-    def export_checked(self, ndx, active):
-        self.dispatch('on_export_checked', ndx, active)
-
-    def row_selected(self, ndx):
-        self.dispatch('on_rowselect', ndx)
-
-    def update_request(self, widget):
-        self.dispatch('on_update_request', widget)
-
-    def update_escape(self, widget):
-        self.dispatch('on_update_escape', widget)
-
-    def play_stop_request(self, widget):
-        self.dispatch('on_play_stop_request', widget)
-
-    def on_export_checked(self, *_):
-        pass
-    def on_rowselect(self, *_):
-        pass
-    def on_update_request(self, *_):
-        pass
-    def on_update_escape(self, *_):
-        pass
-    def on_play_stop_request(self, *_):
-        pass
-
 events = TranscribeEvents()
-
 
 class SentenceInput(TextInput):
 
@@ -109,39 +65,54 @@ class SentenceInput(TextInput):
     }
 
     def __init__(self, **kwargs):
-        self.burn_space = True
+        self.burn_space = False
         super().__init__(**kwargs)
     
-    def on_triple_tap(self, *args):
+    def on_triple_tap(self, *_) -> None:
         # We're doing this twice.  Once to get it set and
         # once to get it displayed.
         Clock.schedule_once(lambda x: self.select_all())
     
-    def keyboard_on_key_down(self, window, keycode, text, modifiers):
+    def keyboard_on_key_down(self, window, keycode:tuple[int, str], text:str, modifiers: ObservableList):
         modifiers = set(modifiers)
         key, name = keycode
         is_shortcut = (
-            modifiers == {'ctrl'}
-            or _is_osx and modifiers == {'meta'}
+            'ctrl' in modifiers
+            or _is_osx and 'meta' in modifiers
         )
-
-        if is_shortcut:
+        handled = False
+        if events.common_keyboard_events(self, name, is_shortcut, modifiers):
+            handled = True
+        elif is_shortcut:
             k = SentenceInput.meta_key_map.get(self.interesting_keys.get(key))
             if k:
-                self.do_cursor_movement(k, is_shortcut=True)
-                return
+                self.do_cursor_movement(k, alt={'alt'} in modifiers, ctrl={'ctrl'} in modifiers)
+                handled = True
+            elif name == "=":
+                start_end = "end" if 'shift' in modifiers else "start"
+                handled = events.time_change(self, 1, start_end)
+            elif name == "-":
+                start_end = "end" if 'shift' in modifiers else "start"
+                handled = events.time_change(self, -1, start_end)
+            elif name == "spacebar":
+                handled = events.play_stop_request(self)
+                self.burn_space = handled
+            elif name == "enter":
+                events.update_request(self)
+                handled = True
+        elif modifiers == {'meta'} and name == 's':
+            handled = events.split_join_request(self, 'split')
+        elif modifiers == {'meta'} and name == 'j':
+            handled = events.split_join_request(self, 'join')
         elif modifiers == {'shift'} and name == 'enter':
-            events.update_request()
-            return
+            handled = events.update_request(self)
         elif modifiers == {'shift'} and name == 'spacebar':
-            self.burn_space = True
-            events.play_stop_request(self)
-            return
+            handled = events.play_stop_request(self)
+            self.burn_space = self.burn_space or handled
         elif name == 'escape':
-            events.update_escape(self)
-            return
+            handled = events.update_escape(self)
         
-        return super().keyboard_on_key_down(window, keycode, text, modifiers)
+        return handled or super().keyboard_on_key_down(window, keycode, text, modifiers)
 
     def keyboard_on_textinput(self, window, text):
         burn_space = self.burn_space
@@ -151,11 +122,19 @@ class SentenceInput(TextInput):
         super().keyboard_on_textinput(window, text)
 
 
-    def do_cursor_movement(self, action, control=False, alt=False, is_shortcut=False):
+    def do_cursor_movement(self, action, control=False, alt=False):
+
+        if alt and action == 'cursor_up':
+            events.previous_row_request(self)
+            return True
+        if alt and action == 'cursor_down':
+            events.next_row_request(self)
+            return True
 
         if not control and not alt:
             col, row = self.cursor
             handle = False
+
             if action == 'cursor_up' and row == 0 and col > 0:
                 col = 0
                 handle = True
@@ -170,9 +149,10 @@ class SentenceInput(TextInput):
                 col = len(self._lines[row])
                 row = max(0,len(self._lines) - 1)
                 handle = True
+            
             if handle:
                 self.cursor = col, row
-                return
+                return True
             
         return super().do_cursor_movement(action, control, alt)
 
@@ -193,184 +173,6 @@ class OnScreenLogger(lg.Handler):
         if record.levelname == "DEBUG" or record.levelname == "INFO":
             self.on_record(record.getMessage())
 
-class RoundSvgButtonWidget(Button):
-    RE_LIST = re.compile(r'([A-Za-z]|-?[0-9]+\.?[0-9]*(?:e-?[0-9]*)?)')
-
-    def parse_float(txt: str) -> float:
-        if not txt:
-            return 0.
-
-        if txt[-2:] in NUMERIC_FORMATS:
-            return dpi2px(txt[:-2], txt[-2:])
-        
-        return float(txt)
-
-    def parse_hw(txt: str, vbox_value: float) -> float:
-        if txt.endswith('%'):
-            return float(vbox_value * txt[:-1] / 100.)        
-        return RoundSvgButtonWidget.parse_float(txt)
-
-    def parse_list(str) -> list:
-        return re.findall(RoundSvgButtonWidget.RE_LIST, str)
-
-    def get_activefile(self):
-        return self.filelist[self.img_index] if self.img_index < len(self.filelist) else None
-    def get_img_index(self) -> int:
-        return self._img_index
-    def set_img_index(self, value: int):
-        v = 0
-        try:
-            v = int(value)
-        except(ValueError):
-            v = 0 # if it's not an int, just go with 0
-        
-        if self.img_index != v:
-            self._img_index = v
-            return True
-        
-        return False
-
-    background_shape = StringProperty()
-    filename = StringProperty()
-    color = ColorProperty([0, 0, 0, 1])
-    bg_color = ColorProperty([0, 0, 0, 0])
-    background_color=(0, 0, 0, 0)
-    down_color = ColorProperty((0, 0, 0, .5))
-    offset = ListProperty((0, 0))
-    button_down = BooleanProperty(False)
-    pressed = ListProperty(None, allownone=True)
-    img_index = AliasProperty(get_img_index, set_img_index, bind=('filename',))
-    activefile = AliasProperty(get_activefile, None, bind=('filename', 'img_index',))
-    scale = ListProperty((1, 1))
-
-    def bg_class(self):
-        return Ellipse #  Right now, we're defaulting to Ellipse
-    
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-        self._img_index = 0
-        self.max = 0
-        self.filelist = []
-        self.vbox_x = 0.
-        self.vbox_y = 0.
-        self.vbox_width = 0.
-        self.vbox_height = 0.
-        self.down_color_ins = None
-        self.background_normal = ""
-        self.scale_obj = None
-        self.translate = None
-        self.register_event_type('on_click')
-        bgclazz = self.bg_class()
-
-        with self.canvas.before:
-            self.bgColor = Color(rgba=self.bg_color)
-            sz = min(self.width, self.height)
-            self.background = bgclazz(pos=self.pos, size=(sz, sz))
-
-        with self.canvas:
-            self.down_color_ins = Color(rgba=(0, 0, 0, 0))
-            PushMatrix()
-            self.translate = Translate(1, 1)
-            self.scale_obj = Scale(1, 1, 1)
-            self.svg = Svg(self.filename)
-            if self.filename:
-                self.svg.color = self.color if self.color else (0, 0, 0, 0)
-            PopMatrix()
-            self.mask = bgclazz(pos=self.pos, size=(sz,sz))
-
-    def set_filelist(self):
-        self.filelist = (self.filename or "").split(",")
-        self.max = max(0,len(self.filelist) - 1)
-        self.img_index = 0
-
-    def on_img_index(self, _, value):
-        value = self.get_activefile()
-        if value != self.svg.source:
-            self.svg.clear()
-            self.svg.source = value
-            self.svg.source = value # Not sure why this has to happen twice 
-
-    def next_image(self):
-        # If somehow our image index got out of bounds, 
-        # we'll just reset to 0
-        if self.img_index + 1 < len(self.filelist):
-            self.img_index += 1
-        else:
-            self.img_index = 0
-
-        return self.get_activefile()
-    
-    def on_bg_color(self, _, value):
-        self.bgColor.rgba = value
-
-    def on_size(self, _, value):
-        self.mask.size = value
-        self.background.size = value
-
-    def on_scale(self, _, scale):
-        x, y = scale
-        self.scale_obj.x = x
-        self.scale_obj.y = y
-
-    def on_pos(self, _, pos):
-        px, py = pos
-        # No idea why an offset is necessary but 0,0 
-        # doesn't line the image with the background
-        ox, oy = self.offset
-        self.mask.pos = pos
-        self.background.pos = pos
-        self.translate.x = px - ox
-        self.translate.y = py - oy
-
-    def on_click(self, *_):
-        return True
-    
-    def on_state(self, _, state):
-        self.down_color_ins.rgba = self.down_color if state == "down" else (0, 0, 0, 0)
-        return True
-    
-    def click(self, touch=None):
-        self.dispatch("on_click", touch.pos if touch else None)
-        self.next_image()
-
-    def on_touch_up(self, touch):
-        # For some reason, the default button behavior generates
-        # two touch up events.  So, we're going to hijhack it and
-        # only change state to "normal" if we're not already normal.
-        if self.state == "down":
-            self.state = "normal"
-            if self.collide_point(*touch.pos):
-                self.click()
-        return True
-    
-    def on_backround_color(self, _, value):
-        self.background.rgba = value
-
-    def on_color(self, _, value):
-        if self.filename:
-            self.svg.color = value
-
-    def on_filename(self, *_):
-        self.set_filelist()
-        v = self.get_activefile()
-
-        # Sucks that the Svg object doesn't expose the view_box.
-        # So, we grabbed the viewbox processing code from the source
-        # and we're using it here.
-        tree = ET.parse(v)
-        root = tree.getroot()
-        view_box = RoundSvgButtonWidget.parse_list(root.get('viewBox', '0 0 100% 100%'))
-        self.vbox_x = RoundSvgButtonWidget.parse_float(view_box[0])
-        self.vbox_y = RoundSvgButtonWidget.parse_float(view_box[1])
-        self.vbox_width = RoundSvgButtonWidget.parse_hw(view_box[2], Window.width)
-        self.vbox_height = RoundSvgButtonWidget.parse_hw(view_box[3], Window.height)
-        self.svg.set_tree(tree)  
-        self.svg.color = self.color if self.color else (0, 0, 0, 0)
-
-class RoundRectSvgButtonWidget(RoundSvgButtonWidget):
-    def bg_class(self):
-        return RoundedRectangle
-
 class TimeEdit(FocusBehavior, BoxLayout):
     time_label = ObjectProperty()
     adjust_slider = ObjectProperty()
@@ -378,15 +180,37 @@ class TimeEdit(FocusBehavior, BoxLayout):
     base_time = NumericProperty(None, allownone=True)
     step = NumericProperty(.01)
 
-    def keyboard_on_key_down(self, _kb, keycode, text, modifiers):
+    def keyboard_on_key_down(self, _kb, keycode:tuple[int, str], text: str, modifiers:ObservableList) -> None:
+
         if not super().keyboard_on_key_down(_kb, keycode, text, modifiers):
-            code, key = keycode
-            if key == 'left':
+            modifiers = set(modifiers)
+            _, key = keycode
+            is_shortcut = (
+                modifiers == {'ctrl'}
+                or _is_osx and modifiers == {'meta'}
+            )
+            if key == 'left' or key == '-' or key == '_':
                 self.decrease_time()
-            elif key == 'right':
+            elif key == 'right' or key == '=' or key == '+':
                 self.increase_time()
             elif key == 'spacebar':
                 events.play_stop_request(self)
+            elif key == 'enter':
+                events.update_request(self)
+            elif key == 'up':
+                events.focus_request(self, 'previous_row')
+            elif key == 'down':
+                events.focus_request(self, 'next_row')
+            elif key == 'home':
+                # Set the slider to 0
+                events.slider_pos_request(self, 0)
+                events.focus_request(self, 'start_time')
+            elif key == 'end':
+                # Set the slider to 90% of max
+                events.slider_pos_request(self, .9)
+                events.focus_request(self, 'end_time')
+            else:
+                events.common_keyboard_events(self, key, is_shortcut, modifiers)
 
     def slider_changed(self, _, touch):
         
@@ -405,7 +229,6 @@ class TimeEdit(FocusBehavior, BoxLayout):
         return True
     
     def on_time_value(self, widget, val):
-
         if self.base_time is None:
             self.base_time = val
             if self.adjust_slider:
@@ -594,8 +417,15 @@ class EditRow(GridLayout):
         else:
             self.play_button.img_index = 0 # not playing
 
-    def audio_slider_change(self, _, pos):
-        pass
+    def audio_slider_down(self, widget, touch):
+        if widget.collide_point(*touch.pos):
+            self.save_focus()
+
+    def audio_slider_up(self, widget, touch):
+        if touch.grab_current == widget:
+            self.restore_focus()
+        else:
+            self._focus_widget = None
 
     def on_playback_event(self, percent_complete, status):
         if self.slider is not None:
@@ -613,6 +443,7 @@ class EditRow(GridLayout):
         self.audio = audio_from_file(self.audio_file, sampling_rate=SAMPLING_RATE) if self.audio_file else None
 
     def clear_data(self):
+        self._focus_widget = None
         self.audio_file = ""
         self.audio = None
         self.active_ndx = None
@@ -632,16 +463,41 @@ class EditRow(GridLayout):
             self.sentence.text = ""
 
     def set_data(self, ndx, line):
-        self.restore_slider = 0
-        self.slider.value = 0
-        self.active_ndx = ndx
-        self.start_time.base_time = None
-        self.start_time.time_value = line['modified_start']
-        self.end_time.base_time = None
-        self.end_time.time_value = line['modified_end']
         self.speaker.disabled = False
-        self.speaker.text = line['speaker']
-        self.sentence.text = line['text']
+        if ndx != self.active_ndx:
+            self.restore_slider = 0
+            self.slider.value = 0
+            self.active_ndx = ndx
+        if self.start_time.time_value != line['modified_start']:            
+            self.start_time.base_time = None
+            self.start_time.time_value = line['modified_start']
+        if self.end_time.time_value != line['modified_end']:
+            self.end_time.base_time = None
+            self.end_time.time_value = line['modified_end']
+        if self.speaker.text != line['speaker']:
+            self.speaker.text = line['speaker']
+        if self.sentence.text != line['text']:
+            self.sentence.text = line['text']
+
+    def save_focus(self):
+        if self.start_time.focus:
+            self._focus_widget = self.start_time
+        elif self.end_time.focus:
+            self._focus_widget = self.end_time
+        elif self.sentence.focus:
+            self._focus_widget = self.sentence
+        else:
+            self._focus_widget = self
+    
+    def restore_focus(self):
+        if self._focus_widget is not None:
+            widget = self._focus_widget
+            self._focus_widget = None
+            if widget is self:
+                events.focus_request(self, 'current_row')
+            else:
+                widget.focus = True
+
 
     def validate_time(self, instance, time_value):
         if time_value is None:
@@ -660,16 +516,26 @@ class EditRow(GridLayout):
 
         return result
     
+    def author_pressed(self, *_):
+        self.save_focus()
+
     def author_selected(self, *_):
-        pass
-    
+        self.restore_focus()
+
     def update_clicked(self, *_):
         # If we don't have an active row,
         # there is nothing to update.  Likewise
         # if our data matches, there is nothing
         # to update.
         if self.active_ndx is not None:
-            events.update_request(self)
+            return_focus = self.sentence
+            if self.start_time.focus:
+                return_focus = self.start_time
+            elif self.end_time.focus:
+                return_focus = self.end_time
+            elif self.sentence.focus:
+                return_focus = self.sentence
+            events.update_request(return_focus, advance=False)
 
 class TranscriptRow(RecycleDataViewBehavior, BoxLayout):
     row_id = StringProperty()
@@ -762,10 +628,19 @@ class TranscriptScreen(Widget):
         events.bind(on_update_request=self.on_update_request)
         events.bind(on_update_escape=self.on_update_escape)
         events.bind(on_export_checked=self.on_export_checked)
+        events.bind(on_focus_request=self.on_focus_request)
+        events.bind(on_save_request=self.on_save_request)
+        events.bind(on_time_change=self.on_time_change)
+        events.bind(on_slider_pos_request=self.on_slider_pos_request)
+        events.bind(on_split_join_request=self.on_split_join_request)
+        events.bind(on_next_row_request=self.on_next_row_request)
+        events.bind(on_previous_row_request=self.on_previous_row_request)
+
         self.transcribe_canceled = False
         self._popup = None
+        self._focus_widget = None
         self.handler = OnScreenLogger(self.on_logging)
-        Window.bind(on_request_close=self.on_request_close)
+        Window.bind(on_request_close=self.on_close_request)
         Window.bind(on_resize=self.on_window_resize)
         super(TranscriptScreen, self).__init__(**kwargs)
 
@@ -779,7 +654,7 @@ class TranscriptScreen(Widget):
     def on_window_resize(self,*args):
         self.window_resize_trigger()
 
-    def on_request_close(self,*args):
+    def on_close_request(self,*args):
         if self.dirty:
             self.dirty = False
             def close_cancel(*_):
@@ -788,7 +663,8 @@ class TranscriptScreen(Widget):
             self.show_save(cancel=close_cancel)
             return True
         
-    def list_keyboard_key_down(self, _kb, keycode, text, modifiers):
+    def list_keyboard_key_down(self, _kb, keycode:tuple[int, str], text:str, modifiers: ObservableList) -> None:
+
         modifiers = set(modifiers)
         _, keyname = keycode
         is_shortcut = (
@@ -796,10 +672,6 @@ class TranscriptScreen(Widget):
             or _is_osx and modifiers == {'meta'}
         )
 
-        # if there's text, it's not a command
-        if text:
-            return
-        
         nr = None
         new_ndx = None
         current_ndx = self.edit_row.active_ndx
@@ -807,24 +679,29 @@ class TranscriptScreen(Widget):
         keyname = "home" if keyname == "up" and is_shortcut else keyname
         keyname = "end" if keyname == "down" and is_shortcut else keyname
 
-        if keyname == 'up':
+        if keyname == "enter":
+            self.edit_row.sentence.focus = True
+        elif keyname == 'spacebar':
+            events.play_stop_request(self)
+            self.edit_row.start_time.focus = True
+        elif events.common_keyboard_events(self.transcript_view.children[0], keyname, is_shortcut, modifiers):
+            return
+        elif keyname == 'up':
             if current_ndx is None:
                 nr = self.lines[0] if self.lines else None
                 new_ndx = 0 if self.lines else None
             else:
                 nr, new_ndx = self.previous_row(self.edit_row.active_ndx)
-        elif keyname == "home":
-            nr, new_ndx = (self.lines[0], 0)        
         elif keyname == 'down':
             if current_ndx is None:
                 nr = self.lines[len(self.lines) - 1] if self.lines else None
                 new_ndx = len(self.lines) - 1 if self.lines else None
             else:
                 nr, new_ndx = self.next_row(self.edit_row.active_ndx)
+        elif keyname == "home":
+            nr, new_ndx = (self.lines[0], 0)        
         elif keyname == "end":
             nr, new_ndx = (self.lines[len(self.lines) - 1], len(self.lines) - 1)            
-        elif keyname == "enter":
-            self.edit_row.sentence.focus = True
 
         if nr:
             self.transcript_view.layout_manager.select_node(new_ndx)
@@ -931,7 +808,7 @@ class TranscriptScreen(Widget):
 
         Clock.schedule_once(f)
 
-    def collapse_row(self, *args):
+    def join_row(self, *args):
         ndx = self.edit_row.active_ndx
         row, _ = self.current_row(ndx)
 
@@ -953,9 +830,7 @@ class TranscriptScreen(Widget):
             row['original_end'] = next_row['original_end']
             self.remove_row(next_ndx)
 
-            def f(_):
-                self.transcript_view.children[0].focus = True
-
+            def f(*_): self.transcript_view.children[0].focus = True
             Clock.schedule_once(f)
 
     @mainthread
@@ -1032,7 +907,7 @@ class TranscriptScreen(Widget):
         self.edit_row.audio_file = transcript.get("AudioFile", '')
         self.lines = [ conv(itm) for itm in transcript["transcription"] ] if transcript["transcription"] else []
 
-        selected_index = None
+        selected_index = 0 if self.lines else None # Select the first line if none is selected
         scroll_height = 0
         ndx = 0
         for line in self.lines:
@@ -1045,12 +920,13 @@ class TranscriptScreen(Widget):
         # If we've got a selected row, we're going to make sure it's scrolled into view.
         if selected_index is not None:
             tv  = self.transcript_view
+            tv.children[0].focus = True
             tvh = tv.height
             def update(_tm):
                 tv.scroll_y = min(1, max(0, 1 - scroll_height/(tv.children[0].height-tvh)))
                 tv.layout_manager.select_node(selected_index)
-            if scroll_height > tvh:
-                Clock.schedule_once(update)
+            if scroll_height > tvh: Clock.schedule_once(update)
+
 
         self.loaded = True
 
@@ -1140,16 +1016,28 @@ class TranscriptScreen(Widget):
                             size_hint=(0.8, 0.8))
         self._popup.open()
 
-    def show_save(self, cancel=None):
-        if cancel is None:
-            cancel = self.dismiss_popup
+    def show_save(self, return_focus:Optional[Widget]=None,cancel:Optional[callable]=None):
+        focus_widget = return_focus \
+            if return_focus is not None else \
+            self.transcript_view.children[0]
+
+        if cancel is None: cancel = self.dismiss_popup
 
         p, f = os.path.split(self.filename)
         p = p or app_path()
         f = f or f'{self.video_edit.text.strip()}.transcript.json'
+
+        if self._popup is not None:
+            self.dismiss_popup()
+        
+        def restore_focus(*_):
+            self._popup = None
+            def q(*_): focus_widget.focus = True
+            Clock.schedule_once(q, .5)
+
         content = SaveDialog(save=self.save, cancel=cancel, path=p, file=f)
-        self._popup = Popup(title="Save file", content=content,
-                            size_hint=(0.8, 0.8))
+        self._popup = Popup(title="Save file", content=content, size_hint=(0.8, 0.8))
+        self._popup.bind(on_dismiss=restore_focus)
         self._popup.open()
 
     def on_rowselect(self, _, ndx:int):
@@ -1179,13 +1067,67 @@ class TranscriptScreen(Widget):
     def on_export_checked(self, evt, index:int, checked:bool):
         self.lines[index]['export'] = checked
 
+    def on_save_request(self, _, requester:Widget):
+        self.show_save(return_focus=requester)
+
+    def on_time_change(self, _, requester:Widget, direction: int, start_end: str) -> None:
+
+        widget_name = start_end.lower()
+        if widget_name == 'start':
+            widget = self.edit_row.start_time
+        elif widget_name == 'end':
+            widget = self.edit_row.end_time
+        
+        if widget and direction > 0:
+            widget.increase_time()
+        elif widget and direction < 0:
+            widget.decrease_time()
+
+    def on_slider_pos_request(self, _, requester:Widget, percent: float) -> None:
+        if percent < 0 or percent > 1: return
+        slider = self.edit_row.slider
+        slider.value = int(slider.max * percent)
+
+    def on_split_join_request(self, _, requester:Widget, split_join: str) -> None:
+        if split_join == 'split':
+            self.split_row()
+        elif split_join == 'join':
+            self.join_row()
+
+    def on_next_row_request(self, _, requester:Widget) -> None:
+        next_row, next_ndx = self.next_row(self.edit_row.active_ndx)
+        if next_row is not None:
+            self.transcript_view.layout_manager.select_node(next_ndx)
+            self.scroll_into_view(next_ndx, "down")
+
+    def on_previous_row_request(self, _, requester:Widget) -> None:
+        prev_row, prev_ndx = self.previous_row(self.edit_row.active_ndx)
+        if prev_row is not None:
+            self.transcript_view.layout_manager.select_node(prev_ndx)
+            self.scroll_into_view(prev_ndx, "up")
+
+    def on_focus_request(self, _, requester:Widget, location: str):
+        if location == 'start_time':
+            self.edit_row.start_time.focus = True
+        elif location == 'end_time':
+            self.edit_row.end_time.focus = True
+        elif location == 'previous_row':
+            self.transcript_view.children[0].focus = True
+            self.list_keyboard_key_down(None, (273, 'up'), '', [])
+        elif location == 'next_row':
+            self.transcript_view.children[0].focus = True
+            self.list_keyboard_key_down(None, (274, 'down'), '', [])
+        elif location == 'current_row':
+            self.transcript_view.children[0].focus = True
+
     def on_update_escape(self, *_):
         def f(_):
             self.transcript_view.children[0].focus = True
         Clock.schedule_once(f, .5)
 
-    def on_update_request(self, _, widget):
-        editrow = widget if widget else self.edit_row
+    def on_update_request(self, _, requester, advance = True):
+
+        editrow = self.edit_row
 
         # The user has requested that the row be updated.
         row = self.lines[editrow.active_ndx]
@@ -1230,16 +1172,20 @@ class TranscriptScreen(Widget):
                     self.remove_row(next_ndx)
         
         self.transcript_view.refresh_from_data()
-        def f(_):
-            self.transcript_view.children[0].focus = True
-        Clock.schedule_once(f)
-        # I'm experimenting with not moving on update        
-        # nr, new_ndx = self.next_row(editrow.active_ndx)
-        # if nr:
-        #     self.transcript_view.layout_manager.select_node(new_ndx)            
-        #     self.scroll_into_view(new_ndx, "down")
 
+        if advance:
+            def f(_):
+                self.transcript_view.children[0].focus = True
+                nr, new_ndx = self.next_row(editrow.active_ndx)
+                if nr:
+                    self.transcript_view.layout_manager.select_node(new_ndx)            
+                    self.scroll_into_view(new_ndx, "down")
+            func = f
+        else:
+            def f(*_): requester.focus = True
+            func = f
 
+        Clock.schedule_once(func)
 
     def on_text(self, _, text):
         self.transcribe_btn.disabled = not text.strip()

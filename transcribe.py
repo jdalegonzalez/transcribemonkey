@@ -629,7 +629,6 @@ def save(
 
         for seg in segments:
             values:SegmentDict = seg if type(seg) == dict else seg.to_dict()
-            logging.info(seg)
             transcript["transcription"].append(values)
             if save_audio and values['export']:
                 segment_file = SubSegment.static_file_dest(vid, values['row_id'], path=dest(values['speaker']))

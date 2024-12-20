@@ -1,5 +1,8 @@
 #:kivy 2.1.0
 #:set tstamp_f '{:07.2f}'
+#:import RoundSvgButtonWidget round_svg_button.RoundSvgButtonWidget
+#:import RoundRectSvgButtonWidget round_svg_button.RoundRectSvgButtonWidget
+
 <BackgroundColor@Widget>:
     background_color: 1, 1, 1, 0
     canvas.before:
@@ -292,7 +295,8 @@
                 value: 0
                 value_track: True
                 orientation: 'horizontal'
-                on_value: root.audio_slider_change(*args)
+                on_touch_up: root.audio_slider_up(*args)
+                on_touch_down: root.audio_slider_down(*args)
                 pos_hint: {'top': .5}
                 cursor_height: 40
                 cursor_width: 40
@@ -326,6 +330,7 @@
                 text: ''
                 values: ('Tom', 'Ula', '')
                 on_text: root.author_selected(*args)
+                on_press: root.author_pressed(*args)
                 disabled: True
             Label:
                 size_hint: 1, 1
@@ -596,7 +601,7 @@
                     height: 50
                     bold: True
                     font_size: 50
-                    on_release: root.collapse_row(*args)
+                    on_release: root.join_row(*args)
                     disabled: id_editrow.active_ndx is None
                 CircleButton:
                     size_hint: None, None
