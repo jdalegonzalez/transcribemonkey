@@ -37,7 +37,6 @@ MODEL_NAME = "large-v3"
 SAMPLING_RATE = 16000 # 22050 #
 #####################
 
-    
 class SpeakerGuess(TypedDict):
     score: float
     label: str
@@ -380,6 +379,13 @@ def transcribe(
         else [-1]
     )
 
+    prompt_str = \
+    "This is a dialog between Tom and Ula. " \
+    "Tom speaks English. " \
+    "Ula speaks Mandarin. " \
+    "- 你好妈 - Uh... em... Yeah. I'm good. 你呢. " \
+    "Produce a verbatim transcription."
+
     ## Things I could maybe tune...
     ## beam_size
     ## best_of
@@ -387,24 +393,44 @@ def transcribe(
     ## initial_prompt
     ## vad_filter
     ## suppress_blank
-    transcription = whisper_model.transcribe(
-        audio_waveform,
-        language=language,
-        suppress_tokens=suppress_tokens,
-        without_timestamps=True,
-        word_timestamps=True,
-        initial_prompt="This is a dialog between Tom and Ula. Tom speaks English.  Ula speaks Mandarin - 你好妈 - Uh... em... Yeah. I'm good. 你呢.",
-        beam_size=1,
-        best_of=10,
-        suppress_blank=False
-    )
+
+    kwargs = {
+        'language':           language,
+        'suppress_tokens':    suppress_tokens,
+        'without_timestamps': True,
+        'word_timestamps':    True,
+        'initial_prompt':     prompt_str,
+        'beam_size': 1,
+        'best_of': 10,
+        'suppress_blank': False
+    }
+
+    # There is a package called stable-ts, which adds transcribe_stable
+    # that is supposed to make it timestamps better. And, maybe it does??
+    # but maybe it slows things WAY down.  Change below from transcribe
+    # to transcribe_stable and back to see.
+
+    use_stable = True
+    noun = ''
+
+    transcription = None
+    if use_stable:
+        # O5OjKjno9Pw
+        # duration: 41:08
+        # INFO:root:Transcription finished in 00:27:51
+        _, info = whisper_model.transcribe(audio_waveform, **kwargs)
+        results = whisper_model.transcribe_stable(audio_waveform, **kwargs)
+        transcription = [results, info]
+        noun = 'Transcribed'
+    else:
+        transcription = whisper_model.transcribe(audio_waveform, **kwargs)
+        noun = 'Transcribing'
 
     # clear gpu vram
     del whisper_model
     torch.cuda.empty_cache()
-    _, info = transcription
-    
-    logging.info(f'Transcribing audio with duration: {to_minutes_seconds(info.duration)}')
+
+    logging.info(f'{noun} audio with duration: {to_minutes_seconds(info.duration)}')
 
     return transcription, [audio_waveform, sr]
 
@@ -527,7 +553,7 @@ def split_segment(
     episode = episode.strip()
     if episode:
         try:
-            episode = w2n.word_to_num(episode)
+            episode = str(w2n.word_to_num(episode))
         except ValueError:
             episode = ""
 
@@ -551,7 +577,7 @@ def get_segments(
 
     flat_subs = []
     quit_looping = False
-    speaker_certainty_cutoff = .59
+    speaker_certainty_cutoff = .65
 
     for segment in segments:
         if quit_looping:
@@ -579,7 +605,10 @@ def get_segments(
             # We're only going to collapse the speaker segments when
             # we're pretty sure that the speaker assignment was accurate.
             # We're deciding that "pretty sure" is the speaker_certainty_cutoff
-            add_subsegment(flat_subs, subseg, collapse_speaker=subseg.speaker_confidence >= speaker_certainty_cutoff)
+            # Also, there is a special case that happens when a sentence is VERY short.
+            # Usually the speaker detector doesn't do a good job.
+            is_one_word = ' ' not in segment.text.strip() 
+            add_subsegment(flat_subs, subseg, collapse_speaker=subseg.speaker_confidence >= speaker_certainty_cutoff and not is_one_word)
 
             if on_seg:
                 quit_looping = on_seg(f'Added segment {subseg.id}', cnt, sub_len, subseg.end / duration)
@@ -639,6 +668,7 @@ def save(
             stream.write("\n")
 
 if __name__ == '__main__':
+
     args = get_arguments()
 
     logging.basicConfig(level=args.log_level.upper())
@@ -654,9 +684,10 @@ if __name__ == '__main__':
     audio_file, _, yt = get_youtube_audio(args.video_id, is_short=args.is_a_short, filename=args.filename)
 
     logging.info(f'Transcribing: "{yt.title}"')
-    transcript, audio = transcribe(audio_file)
 
     start_trans = datetime.datetime.now()
+
+    transcript, audio = transcribe(audio_file)
     episode, flat_subs = get_segments(args.video_id, transcript, audio, args.episode)
 
     json_path = args.transcript_json
