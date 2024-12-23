@@ -329,8 +329,8 @@
                 id: id_speaker
                 text: ''
                 values: ('Tom', 'Ula', '')
-                on_text: root.author_selected(*args)
-                on_press: root.author_pressed(*args)
+                on_text: root.speaker_selected(*args)
+                on_press: root.speaker_pressed(*args)
                 disabled: True
             Label:
                 size_hint: 1, 1
@@ -366,7 +366,7 @@
                     size_hint: None, .5
                     width: self.height
                     color: (1, 1, 1, 1)            
-                    bg_color: (.4, .4, .4, 1)
+                    bg_color: (.4, .4, .4, 1) if not root.dirty else (.6, .4, .4, .8)
                     filename: 'images/update.svg'
                     pos: self.pos
                     size: self.size
@@ -380,6 +380,7 @@
             size_hint: 1, 1
             font_size: 30
             font_name: 'fonts/NotoSansSC-Medium.otf'
+            on_text: root.text_changed(*args)
         
     BoxLayout:
         size_hint: 1, None

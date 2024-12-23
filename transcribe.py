@@ -13,6 +13,7 @@ from word2number import w2n
 from typing import Optional, TypedDict, Union, Iterable
 
 from hanziconv import HanziConv
+import jieba
 
 import numpy as np
 from transformers import pipeline
@@ -607,7 +608,9 @@ def get_segments(
             # We're deciding that "pretty sure" is the speaker_certainty_cutoff
             # Also, there is a special case that happens when a sentence is VERY short.
             # Usually the speaker detector doesn't do a good job.
-            is_one_word = ' ' not in segment.text.strip() 
+            # We also know that this sub ends in a stop character and our splitter sees
+            # a stop character as a word.  So, "one word" is a length < 3 (1, or 2)
+            is_one_word = len(jieba.lcut(subseg.text)) < 3
             add_subsegment(flat_subs, subseg, collapse_speaker=subseg.speaker_confidence >= speaker_certainty_cutoff and not is_one_word)
 
             if on_seg:
@@ -656,8 +659,15 @@ def save(
         transcript["AudioFile"] = audio_filename
         transcript["transcription"] = []
 
+        # There can be only one selected.  If for some reason
+        # we see more than one, we'll fix it and warn.
+        seen_selected = False
         for seg in segments:
-            values:SegmentDict = seg if type(seg) == dict else seg.to_dict()
+            values:SegmentDict = dict(seg) if type(seg) == dict else seg.to_dict()
+            if values['selected'] and seen_selected:
+                logging.warning(f'More than one selected row at {len(transcript["transcription"])}')
+                values['selected'] = False
+            seen_selected = bool(seen_selected or values['selected'])
             transcript["transcription"].append(values)
             if save_audio and values['export']:
                 segment_file = SubSegment.static_file_dest(vid, values['row_id'], path=dest(values['speaker']))

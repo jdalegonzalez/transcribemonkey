@@ -15,6 +15,7 @@ class TranscribeEvents(EventDispatcher):
         self.register_event_type('on_split_join_request')
         self.register_event_type('on_next_row_request')
         self.register_event_type('on_previous_row_request')
+        self.register_event_type('on_set_speaker_request')
         super(TranscribeEvents, self).__init__(**kwargs)
 
     def export_checked(self, ndx: int, active: bool) -> bool:
@@ -65,6 +66,10 @@ class TranscribeEvents(EventDispatcher):
         self.dispatch('on_split_join_request', requester, split_join)
         return True
 
+    def set_speaker_request(self, requester: Widget, speaker_num: int) -> bool:
+        self.dispatch('on_set_speaker_request', requester, speaker_num)
+        return True
+
     def on_export_checked(self, *_) -> None:
         pass
     def on_rowselect(self, *_) -> None:
@@ -89,11 +94,20 @@ class TranscribeEvents(EventDispatcher):
         pass
     def on_previous_row_request(self, *_) -> None:
         pass
+    def on_set_speaker_request(self, *_) -> None:
+        pass
 
     def common_keyboard_events(self, requester:Widget, key, is_shortcut, modifiers) -> bool:
         if not is_shortcut:
             return False
-        meta = {'meta'} in modifiers
+        meta = {'meta'} == modifiers
+
+        if key.isdigit() and meta:
+            self.set_speaker_request(requester, int(key))
+            return True
+        if key == 'j' and meta:
+            self.split_join_request(requester, 'join')
+            return True
         if key == 'b':
             self.focus_request(requester, 'start_time')
             return True

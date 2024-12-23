@@ -1,3 +1,4 @@
+#! python
 import argparse
 import json
 import os
@@ -41,6 +42,7 @@ from kivy.config import Config
 from kivy.properties import (
         AliasProperty,
         BooleanProperty,
+        DictProperty,
         ListProperty,
         NumericProperty,
         ObjectProperty,
@@ -206,8 +208,8 @@ class TimeEdit(FocusBehavior, BoxLayout):
                 events.slider_pos_request(self, 0)
                 events.focus_request(self, 'start_time')
             elif key == 'end':
-                # Set the slider to 90% of max
-                events.slider_pos_request(self, .6)
+                # Set the slider to 50% of max
+                events.slider_pos_request(self, .5)
                 events.focus_request(self, 'end_time')
             else:
                 events.common_keyboard_events(self, key, is_shortcut, modifiers)
@@ -287,6 +289,19 @@ class SaveDialog(FloatLayout):
 
 class EditRow(GridLayout):
 
+    def is_dirty(self) -> bool:
+        if self.line is None or self.active_ndx is None or \
+            self.start_time.time_value is None or self.end_time.time_value is None or \
+            self.sentence.text is None or self.speaker.text is None:
+            return False
+        
+        return (
+            self.start_time.time_value != self.line['modified_start'] or
+            self.end_time.time_value != self.line['modified_end'] or
+            self.sentence.text != self.line['text'] or
+            self.speaker.text != self.line['speaker']
+        )
+
     start_time = ObjectProperty()
     end_time = ObjectProperty()
     play_button = ObjectProperty()
@@ -296,6 +311,9 @@ class EditRow(GridLayout):
     sentence = ObjectProperty()
     active_ndx = NumericProperty(None, allownone=True)
     time_label = ObjectProperty()
+    dirty = BooleanProperty(False)
+
+    line = DictProperty(None, allownone=True)
 
     def __init__(self, **kwargs):
         events.bind(on_play_stop_request=self.on_play_stop_request)
@@ -369,8 +387,10 @@ class EditRow(GridLayout):
         self.audio_file = ""
         self.audio = None
         self.active_ndx = None
+        self.line = None
         self.segment = None
         self.restore_slider = 0
+        self.dirty = False
 
         if self.slider:
             self.slider.value = 0
@@ -386,18 +406,25 @@ class EditRow(GridLayout):
 
     def set_data(self, ndx, line):
         self.speaker.disabled = False
+        self.dirty = False
+
         if ndx != self.active_ndx:
             self.restore_slider = 0
             self.slider.value = 0
             self.active_ndx = ndx
+            self.line = line
+
         if self.start_time.time_value != line['modified_start']:            
             self.start_time.base_time = None
             self.start_time.time_value = line['modified_start']
+
         if self.end_time.time_value != line['modified_end']:
             self.end_time.base_time = None
             self.end_time.time_value = line['modified_end']
+
         if self.speaker.text != line['speaker']:
             self.speaker.text = line['speaker']
+
         if self.sentence.text != line['text']:
             self.sentence.text = line['text']
 
@@ -419,12 +446,11 @@ class EditRow(GridLayout):
                 events.focus_request(self, 'current_row')
             else:
                 widget.focus = True
-
-
+        
     def validate_time(self, instance, time_value):
         if time_value is None:
             return True
-        
+
         is_start_time = instance == self.start_time
         if is_start_time:
             # Start time can't be less than 0 or more than the end time.
@@ -436,19 +462,26 @@ class EditRow(GridLayout):
             # End time can't be more than the total length of the audio or less the start_value
             result = (self.start_time.time_value is None or time_value > self.start_time.time_value) and time_value < self.audio_length
 
+        self.dirty = self.is_dirty()
+
         return result
     
-    def author_pressed(self, *_):
+    def text_changed(self, *_):
+        self.dirty = self.is_dirty()
+
+    def speaker_pressed(self, *_):
         self.save_focus()
 
-    def author_selected(self, *_):
+    def speaker_selected(self, *_):
         self.restore_focus()
+        self.dirty = self.is_dirty()
 
     def update_clicked(self, *_):
         # If we don't have an active row,
         # there is nothing to update.  Likewise
         # if our data matches, there is nothing
         # to update.
+        self.dirty = False
         if self.active_ndx is not None:
             return_focus = self.sentence
             if self.start_time.focus:
@@ -561,6 +594,7 @@ class TranscriptScreen(Widget):
         events.bind(on_split_join_request=self.on_split_join_request)
         events.bind(on_next_row_request=self.on_next_row_request)
         events.bind(on_previous_row_request=self.on_previous_row_request)
+        events.bind(on_set_speaker_request=self.on_set_speaker_request)
 
         self.transcribe_canceled = False
         self._popup = None
@@ -605,12 +639,59 @@ class TranscriptScreen(Widget):
         keyname = "home" if keyname == "up" and is_shortcut else keyname
         keyname = "end" if keyname == "down" and is_shortcut else keyname
 
+        rv = self.transcript_view
+        va = rv.view_adapter
+        lm = rv.layout_manager
+        rv_y = rv.pos[1]
+
         if keyname == "enter":
             self.edit_row.sentence.focus = True
         elif keyname == 'spacebar':
             events.play_stop_request(self)
             self.edit_row.start_time.focus = True
-        elif events.common_keyboard_events(self.transcript_view.children[0], keyname, is_shortcut, modifiers):
+        elif keyname == "pageup" or keyname == "pagedown":
+            indexes = list(sorted(lm.view_indices.values()))
+            last_index = True
+            if keyname == "pageup":
+
+                if indexes[0] == 0:
+                    last_index = False
+                    new_ndx = 0
+                    new_scroll_y = 1
+                else:
+                    wdg_top = va.get_visible_view(indexes[0])
+                    wdg_top_y = rv.to_parent(0, wdg_top.pos[1])[1] - rv_y
+                    wdg_top_showing = rv.height - wdg_top_y
+                    top_percent = wdg_top_showing / wdg_top.height
+
+                    # If we're paging down, and the top guy is more than 50% off the screen
+                    # we'll subtract the part that is off the screen, leaving the top row
+                    # as the bottom row.
+                    amount = wdg_top_y + wdg_top.height if top_percent > .5 else wdg_top_y
+                    new_scroll_y = min(1, rv.scroll_y + (amount / (lm.height - rv.height)))
+            else:
+
+                if indexes[-1] == len(self.lines) - 1:
+                    new_ndx = len(self.lines) - 1
+                    new_scroll_y = 0
+                else:
+                    wdg_bot = va.get_visible_view(indexes[-1])
+                    wdg_bot_y = rv.to_parent(0, wdg_bot.pos[1])[1] - rv_y
+                    wdg_bot_showing = wdg_bot.height + wdg_bot_y
+                    bot_percent = wdg_bot_showing / wdg_bot.height
+                    amount = rv.height - wdg_bot_y if bot_percent < .5 else rv.height + wdg_bot.height
+                    new_scroll_y = max(0, rv.scroll_y - (amount / (lm.height - rv.height)))
+                
+            rv.scroll_y = new_scroll_y
+
+            def f(*_):
+                indexes = list(sorted(lm.view_indices.values()))
+                self.select_row(indexes[-1] if last_index else indexes[0])
+
+            Clock.schedule_once(f)
+            return
+            
+        elif events.common_keyboard_events(lm, keyname, is_shortcut, modifiers):
             return
         elif keyname == 'up':
             if current_ndx is None:
@@ -630,10 +711,9 @@ class TranscriptScreen(Widget):
             nr, new_ndx = (self.lines[len(self.lines) - 1], len(self.lines) - 1)            
 
         if nr:
-            self.transcript_view.layout_manager.select_node(new_ndx)
-            self.scroll_into_view(new_ndx, keyname)
+            self.scroll_into_view(new_ndx, keyname, select_row=new_ndx)
 
-    def scroll_into_view(self, ndx, key):
+    def scroll_into_view(self, ndx, key, select_row:int=None):
 
         def f(*_):
             rv = self.transcript_view
@@ -649,12 +729,12 @@ class TranscriptScreen(Widget):
                 elif key == "end":
                     new_scroll_y = 0
                 else:
-                    widgets = list(lm.view_indices)
+                    indexes = list(sorted(lm.view_indices.values()))
                     if key == "down":
-                        widget = widgets[0]
+                        widget = va.get_visible_view(indexes[0])
                         dir = -1
                     else: 
-                        widget = widgets[-1]
+                        widget = va.get_visible_view(indexes[-1])
                         dir = 1
                     widget_h = widget.height + widget.padding[1] + widget.padding[3]
                     new_scroll_y = 1 if ndx == 0 else 1 if ndx == len(self.lines) - 1 else rv.scroll_y + (dir * (widget_h / (lm.height - rv.height)))
@@ -680,6 +760,8 @@ class TranscriptScreen(Widget):
                     rv.scroll_y = 1
                 elif ndx == len(self.lines) - 1 and rv.scroll_y > 0:
                     rv.scroll_y = 0
+                if select_row is not None:
+                    self.select_row(select_row)
 
         Clock.schedule_once(f)
 
@@ -719,6 +801,11 @@ class TranscriptScreen(Widget):
             new_row['text'] = self.edit_row.sentence.text[cur:]
             row['modified_end'] = end
             new_row['modified_start'] = end
+            spin = self.edit_row.speaker
+            speaker = spin.text
+            cur_index = spin.values.index(speaker)
+            new_index = 1 if cur_index == 0 else 0
+            new_row['speaker'] = spin.values[new_index]
         else:            
             row['modified_end'] = round(row['modified_start'] + dur,2)
             new_row['modified_start'] = row['modified_end']
@@ -728,9 +815,8 @@ class TranscriptScreen(Widget):
         self.edit_row.end_time.time_value = row['modified_end']
 
         def f(_):
-            self.transcript_view.children[0].focus = True
-            self.transcript_view.layout_manager.select_node(ndx+1)
-            self.scroll_into_view(ndx+1, "down")
+            self.transcript_view.layout_manager.focus = True
+            self.scroll_into_view(ndx+1, "down", select_row=ndx+1)
 
         Clock.schedule_once(f)
 
@@ -751,12 +837,12 @@ class TranscriptScreen(Widget):
             row['speaker'] = next_row['speaker'] if len(next_row['speaker'].strip()) > 0 else \
                 row['speaker']
             if row['text'].strip() != next_row['text'].strip():
-                row['text'] += next_row['text']
+                row['text'] += (" " + next_row['text'])
             row['modified_end'] = next_row['modified_end']
             row['original_end'] = next_row['original_end']
             self.remove_row(next_ndx)
 
-            def f(*_): self.transcript_view.children[0].focus = True
+            def f(*_): self.transcript_view.layout_manager.focus = True
             Clock.schedule_once(f)
 
     @mainthread
@@ -824,7 +910,7 @@ class TranscriptScreen(Widget):
             return itm
 
         if self.edit_row.active_ndx is not None:
-            self.transcript_view.layout_manager.deselect_node(self.edit_row.active_ndx)
+            self.deselect_row(self.edit_row.active_ndx)
 
         self.edit_row.clear_data()
         self.title_label.text = transcript.get("title", '')
@@ -833,7 +919,7 @@ class TranscriptScreen(Widget):
         self.edit_row.audio_file = transcript.get("AudioFile", '')
         self.lines = [ conv(itm) for itm in transcript["transcription"] ] if transcript["transcription"] else []
 
-        selected_index = 0 if self.lines else None # Select the first line if none is selected
+        selected_index = None
         scroll_height = 0
         ndx = 0
         for line in self.lines:
@@ -844,14 +930,25 @@ class TranscriptScreen(Widget):
             scroll_height += line['size'][1]
         
         # If we've got a selected row, we're going to make sure it's scrolled into view.
+        if selected_index is None and self.lines:
+            selected_index = 0
+            scroll_height = 0
+            self.lines[0]['selected'] = True
+
         if selected_index is not None:
             tv  = self.transcript_view
-            tv.children[0].focus = True
+            lm = tv.layout_manager
+            lm.focus = True
+
             tvh = tv.height
             def update(_tm):
-                tv.scroll_y = min(1, max(0, 1 - scroll_height/(tv.children[0].height-tvh)))
-                tv.layout_manager.select_node(selected_index)
-            if scroll_height > tvh: Clock.schedule_once(update)
+                tv.scroll_y = min(1, max(0, 1 - scroll_height/(lm.height-tvh)))
+                self.select_row(selected_index)
+
+            if scroll_height > tvh:
+                Clock.schedule_once(update)
+            else:
+                self.select_row(selected_index)
 
 
         self.loaded = True
@@ -945,7 +1042,7 @@ class TranscriptScreen(Widget):
     def show_save(self, return_focus:Optional[Widget]=None,cancel:Optional[callable]=None):
         focus_widget = return_focus \
             if return_focus is not None else \
-            self.transcript_view.children[0]
+            self.transcript_view.layout_manager
 
         if cancel is None: cancel = self.dismiss_popup
 
@@ -968,6 +1065,22 @@ class TranscriptScreen(Widget):
 
     def on_rowselect(self, _, ndx:int):
         self.edit_row.set_data(ndx, self.lines[ndx])
+
+    def deselect_row(self, ndx:int) -> None:
+        if ndx >= 0 and ndx < len(self.lines):
+            self.lines[ndx]['selected'] = False
+
+        self.transcript_view.layout_manager.deselect_node(ndx)
+
+    def select_row(self, ndx:int) -> None:
+        curr = self.edit_row.active_ndx
+
+        if curr != ndx and curr is not None and curr >=0 and curr < len(self.lines):
+            self.lines[curr]['selected'] = False
+        if ndx is not None and ndx >= 0 and ndx < len(self.lines):
+            self.lines[ndx]['selected'] = True
+
+        self.transcript_view.layout_manager.select_node(ndx)
 
     ### These wrapper functions let me change my mind
     ### about where I keep the individual transcript rows.
@@ -1023,14 +1136,21 @@ class TranscriptScreen(Widget):
     def on_next_row_request(self, _, requester:Widget) -> None:
         next_row, next_ndx = self.next_row(self.edit_row.active_ndx)
         if next_row is not None:
-            self.transcript_view.layout_manager.select_node(next_ndx)
             self.scroll_into_view(next_ndx, "down")
+            self.select_row(next_ndx)
 
     def on_previous_row_request(self, _, requester:Widget) -> None:
         prev_row, prev_ndx = self.previous_row(self.edit_row.active_ndx)
         if prev_row is not None:
-            self.transcript_view.layout_manager.select_node(prev_ndx)
             self.scroll_into_view(prev_ndx, "up")
+            self.select_row(prev_ndx)
+
+    def on_set_speaker_request(self, _, requester:Widget, speaker_num: int) -> None:
+        speaker_spinner = self.edit_row.speaker
+        values = speaker_spinner.values
+        if speaker_num >= 1 and speaker_num <= len(values):
+            speaker_spinner.text = values[speaker_num - 1]
+
 
     def on_focus_request(self, _, requester:Widget, location: str):
         if location == 'start_time':
@@ -1038,17 +1158,17 @@ class TranscriptScreen(Widget):
         elif location == 'end_time':
             self.edit_row.end_time.focus = True
         elif location == 'previous_row':
-            self.transcript_view.children[0].focus = True
+            self.transcript_view.layout_manager.focus = True
             self.list_keyboard_key_down(None, (273, 'up'), '', [])
         elif location == 'next_row':
-            self.transcript_view.children[0].focus = True
+            self.transcript_view.layout_manager.focus = True
             self.list_keyboard_key_down(None, (274, 'down'), '', [])
         elif location == 'current_row':
-            self.transcript_view.children[0].focus = True
+            self.transcript_view.layout_manager.focus = True
 
     def on_update_escape(self, *_):
         def f(_):
-            self.transcript_view.children[0].focus = True
+            self.transcript_view.layout_manager.focus = True
         Clock.schedule_once(f, .5)
 
     def on_update_request(self, _, requester, advance = True):
@@ -1056,7 +1176,7 @@ class TranscriptScreen(Widget):
         editrow = self.edit_row
 
         # The user has requested that the row be updated.
-        row = self.lines[editrow.active_ndx]
+        row = editrow.line
         if row['speaker'] != editrow.speaker.text:
             self.dirty = True
             row['speaker'] = editrow.speaker.text
@@ -1065,7 +1185,6 @@ class TranscriptScreen(Widget):
             self.dirty = True
             row['text'] = editrow.sentence.text
             row['size'] = self.calculate_size(row)
-            self.transcript_view.refresh_from_data()
 
         # There is one little trickyness in that the start
         # has been updated, the end of the previous row has
@@ -1101,11 +1220,11 @@ class TranscriptScreen(Widget):
 
         if advance:
             def f(_):
-                self.transcript_view.children[0].focus = True
+                lm = self.transcript_view.layout_manager
+                lm.focus = True
                 nr, new_ndx = self.next_row(editrow.active_ndx)
                 if nr:
-                    self.transcript_view.layout_manager.select_node(new_ndx)            
-                    self.scroll_into_view(new_ndx, "down")
+                    self.scroll_into_view(new_ndx, "down", select_row=new_ndx)
             func = f
         else:
             def f(*_): requester.focus = True
