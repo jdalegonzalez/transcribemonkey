@@ -1,5 +1,6 @@
 #:kivy 2.1.0
 #:set tstamp_f '{:07.2f}'
+#:import os os
 #:import RoundSvgButtonWidget round_svg_button.RoundSvgButtonWidget
 #:import RoundRectSvgButtonWidget round_svg_button.RoundRectSvgButtonWidget
 
@@ -264,6 +265,7 @@
     sync_time: id_sync_time
     time_label: id_time
     audio_file: ""
+    json_file: ""
     cols: 1
     rows: 3
     padding: 0, 0, 0, 20
@@ -390,9 +392,15 @@
             size_hint_x: None
             width: 70
         FullLabel:
-            size_hint_x: 70
+            size_hint_x: 30
             text: "Keep segment times in sync"
             valign: "middle"
+        FullLabel:
+            size_hint_x: 70
+            text: os.sep.join((root.json_file or "").split(os.sep)[-2:])
+            valign: "middle"
+            halign: "right"
+            color: (.6, .6, .6, 1)
 
 <MenuBar@GridLayout+BackgroundColor>:
 
@@ -588,6 +596,7 @@
             EditRow:
                 size_hint: .96, 1
                 id: id_editrow
+                json_file: ""
             BoxLayout:
                 size_hint: .04, None
                 height: 100

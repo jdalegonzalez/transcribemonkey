@@ -10,9 +10,8 @@ class AudioSegment():
         self.start = start
         self.end = end
         self.callback = kwargs.get('callback')
-        self.stream = None
-        self.stream = None
         self.device = None
+        self.stream = None
         self.all_frames = None
 
     @property
@@ -23,11 +22,16 @@ class AudioSegment():
     def segment(self, start_end):
         self.start, self.end = start_end
 
+    @property
+    def playing(self):
+        return self.stream is not None and self.stream.active
+    
     def stop(self):
+        self.stream = None
         sd.stop()
 
     def play(self, offset=0):
-        sd.stop()
+        self.stop()
 
         ctx = sd._CallbackContext(loop=False)
         start = int((self.start + offset) * self.sample_rate)
@@ -54,25 +58,30 @@ class AudioSegment():
 
         offset_frame = self.all_frames - ctx.frames
 
-        def clock_func(dt):
+        def clock_func(_):
             div = self.all_frames if self.all_frames else 1
             percent = round((offset_frame + ctx.frame) / div, 2)
             ended = percent > .99
-            stat = "playing" if sd.get_stream().active else \
+            stat = "playing" if (self.stream and self.stream.active) else \
                 "ended" if ended else "stopped"
             self.callback(percent, stat)
-            return sd.get_stream().active            
+            return stat == "playing"
         
         def _callback(outdata, frames, _, status):
             assert len(outdata) == frames
             ctx.callback_enter(status, outdata)
             ctx.write_outdata(outdata)
+            if not ctx.blocksize:
+                self.stream = None
+                if self.callback:
+                    self.callback(1, "ended")
             ctx.callback_exit()
 
         Clock.schedule_interval(clock_func, .02)
         ctx.start_stream(sd.OutputStream, self.sample_rate, ctx.output_channels,
                         ctx.output_dtype, _callback, False,
                         prime_output_buffers_using_stream_callback=False)
+        self.stream = ctx.stream
 
     def __repr__(self):
         return f'[id: {self.id}, start: {self.start}, end: {self.end}, text: "{self.text}", speaker: "{self.speaker}"]'

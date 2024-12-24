@@ -7,6 +7,7 @@ import math
 import logging
 import html
 import datetime
+from enum import Enum
 
 from word2number import w2n
 
@@ -31,11 +32,32 @@ from pytubefix.cli import on_progress
 
 from docxtpl import DocxTemplate
 
+class TranscribeMethods(Enum):
+    FASTER_WHISPER = 'faster-whisper'
+    STABLE_WHISPER = 'stable-whisper'
+    HUGGING_FACE = 'hugging_face-whisper'
+
 ##### Constants #####
 DEVICE = "cpu"
 COMPUTE_TYPE = "int8"
-MODEL_NAME = "large-v3"
+MODEL_NAME = "large-v3-turbo"
 SAMPLING_RATE = 16000 # 22050 #
+
+HF_MODELS = {
+    "tiny.en": "openai/whisper-tiny.en",
+    "tiny": "openai/whisper-tiny",
+    "base.en": "openai/whisper-base.en",
+    "base": "openai/whisper-base",
+    "small.en": "openai/whisper-small.en",
+    "small": "openai/whisper-small",
+    "medium.en": "openai/whisper-medium.en",
+    "medium": "openai/whisper-medium",
+    "large-v1": "openai/whisper-large-v1",
+    "large-v2": "openai/whisper-large-v2",
+    "large-v3": "openai/whisper-large-v3",
+    "large": "openai/whisper-large-v3"
+}
+
 #####################
 
 class SpeakerGuess(TypedDict):
@@ -312,6 +334,7 @@ def find_numeral_symbol_tokens(tokenizer):
         has_numeral_symbol = any(c in "0123456789%$£" for c in token)
         if has_numeral_symbol:
             numeral_symbol_tokens.append(token_id)
+
     return numeral_symbol_tokens
 
 def load_transcript_from_file(filename: str) -> dict:
@@ -368,17 +391,11 @@ def transcribe(
     not necessary since we're using the CPU and not the GPU but
     whatever.  Maybe it will help with big files.
     """
-    whisper_model = stable_whisper.load_faster_whisper(
-        model_name, device=device, compute_type=compute_type
-    )
-
-    sr = whisper_model.feature_extractor.sampling_rate
-    audio_waveform, _ = audio_from_file(audio_file, sampling_rate=sr)
-    suppress_tokens = (
-        find_numeral_symbol_tokens(whisper_model.hf_tokenizer)
-        if suppress_numerals
-        else [-1]
-    )
+    # There is a package called stable-ts, which adds transcribe_stable
+    # that is supposed to make it timestamps better. And, maybe it does??
+    # but maybe it slows things WAY down.  Change below from transcribe
+    # to transcribe_stable and back to see.
+    method = TranscribeMethods.STABLE_WHISPER
 
     prompt_str = \
     "This is a dialog between Tom and Ula. " \
@@ -397,7 +414,6 @@ def transcribe(
 
     kwargs = {
         'language':           language,
-        'suppress_tokens':    suppress_tokens,
         'without_timestamps': True,
         'word_timestamps':    True,
         'initial_prompt':     prompt_str,
@@ -406,31 +422,56 @@ def transcribe(
         'suppress_blank': False
     }
 
-    # There is a package called stable-ts, which adds transcribe_stable
-    # that is supposed to make it timestamps better. And, maybe it does??
-    # but maybe it slows things WAY down.  Change below from transcribe
-    # to transcribe_stable and back to see.
+    # Hugging face version gets killed on my machine, so...
+    # I wouldn't recommend using it.
+    if method == TranscribeMethods.HUGGING_FACE:
+        from transformers import AutoProcessor
+        processor = AutoProcessor.from_pretrained(HF_MODELS[model_name])
+        tokenizer = processor.tokenizer
+        whisper_model = stable_whisper.load_hf_whisper(model_name, device)
+        sr = whisper_model.sampling_rate
+        kwargs.pop('without_timestamps')
+        kwargs.pop('initial_prompt')
+        kwargs.pop('beam_size')
+        kwargs.pop('best_of')
+        kwargs.pop('suppress_blank')
+    else:    
+        whisper_model = stable_whisper.load_faster_whisper(
+            model_name, device=device, compute_type=compute_type
+        )
+        sr = whisper_model.feature_extractor.sampling_rate
+        tokenizer = whisper_model.hf_tokenizer
 
-    use_stable = True
+    kwargs['suppress_tokens'] = (
+        find_numeral_symbol_tokens(tokenizer)
+        if suppress_numerals
+        else [-1]
+    )
+    
+    audio_waveform, _ = audio_from_file(audio_file, sampling_rate=sr)
+
     noun = ''
 
     transcription = None
-    if use_stable:
+    if method == TranscribeMethods.STABLE_WHISPER:
         # O5OjKjno9Pw
         # duration: 41:08
-        # INFO:root:Transcription finished in 00:27:51
+        # "large-v3" INFO:root:Transcription finished in 00:27:51
         _, info = whisper_model.transcribe(audio_waveform, **kwargs)
         results = whisper_model.transcribe_stable(audio_waveform, **kwargs)
         transcription = [results, info]
         noun = 'Transcribed'
     else:
+        # O5OjKjno9Pw
+        # duration: 41:08
+        # "large-v3" INFO:root:Transcription finished in 00:31:15
         transcription = whisper_model.transcribe(audio_waveform, **kwargs)
         noun = 'Transcribing'
 
     # clear gpu vram
     del whisper_model
     torch.cuda.empty_cache()
-
+    _, info = transcription
     logging.info(f'{noun} audio with duration: {to_minutes_seconds(info.duration)}')
 
     return transcription, [audio_waveform, sr]
@@ -667,6 +708,7 @@ def save(
             if values['selected'] and seen_selected:
                 logging.warning(f'More than one selected row at {len(transcript["transcription"])}')
                 values['selected'] = False
+            values.pop('size')
             seen_selected = bool(seen_selected or values['selected'])
             transcript["transcription"].append(values)
             if save_audio and values['export']:

@@ -42,7 +42,6 @@ from kivy.config import Config
 from kivy.properties import (
         AliasProperty,
         BooleanProperty,
-        DictProperty,
         ListProperty,
         NumericProperty,
         ObjectProperty,
@@ -182,6 +181,9 @@ class TimeEdit(FocusBehavior, BoxLayout):
     base_time = NumericProperty(None, allownone=True)
     step = NumericProperty(.01)
 
+    def request_update(self):
+        events.update_request(self)
+
     def keyboard_on_key_down(self, _kb, keycode:tuple[int, str], text: str, modifiers:ObservableList) -> None:
 
         if not super().keyboard_on_key_down(_kb, keycode, text, modifiers):
@@ -198,7 +200,7 @@ class TimeEdit(FocusBehavior, BoxLayout):
             elif key == 'spacebar':
                 events.play_stop_request(self)
             elif key == 'enter':
-                events.update_request(self)
+                self.request_update()
             elif key == 'up':
                 events.focus_request(self, 'previous_row')
             elif key == 'down':
@@ -214,9 +216,8 @@ class TimeEdit(FocusBehavior, BoxLayout):
             else:
                 events.common_keyboard_events(self, key, is_shortcut, modifiers)
 
-    def slider_changed(self, _, touch):
-        
-        if not self.adjust_slider.collide_point(*touch.pos):
+    def slider_changed(self, widget, _):
+        if widget != self.adjust_slider:
             return False
 
         if self.base_time is None:
@@ -227,6 +228,10 @@ class TimeEdit(FocusBehavior, BoxLayout):
             time_value = round(self.base_time + self.adjust_slider.value, 2)
             if not callable(val) or val(self, time_value):
                 self.time_value = time_value
+            else:
+                def f(*_): self.adjust_slider.value = round(self.time_value - self.base_time,2)
+                Clock.schedule_once(f)
+                
 
         return True
     
@@ -313,9 +318,8 @@ class EditRow(GridLayout):
     time_label = ObjectProperty()
     dirty = BooleanProperty(False)
 
-    line = DictProperty(None, allownone=True)
-
     def __init__(self, **kwargs):
+        self.line = None
         events.bind(on_play_stop_request=self.on_play_stop_request)
         super().__init__(**kwargs)
         self.clear_data()
@@ -332,9 +336,10 @@ class EditRow(GridLayout):
     def play_stop(self, *_):
         self.play_button.click()
 
+    @mainthread
     def play_stop_click(self, widget, _):
 
-        start_playing = widget.img_index == 0
+        start_playing = self.segment is None or not self.segment.playing
 
         if not start_playing:
             self.segment.stop()
@@ -367,6 +372,7 @@ class EditRow(GridLayout):
         else:
             self._focus_widget = None
 
+    @mainthread
     def on_playback_event(self, percent_complete, status):
         if self.slider is not None:
             self.slider.value = int(self.slider.max * percent_complete)
@@ -579,7 +585,6 @@ class TranscriptScreen(Widget):
     stop = threading.Event()
 
     def __init__(self, **kwargs):
-        self.filename = ""
         self.top_line = 0
         self.row_for_height = TranscriptRow()
 
@@ -836,8 +841,8 @@ class TranscriptScreen(Widget):
             ### both lines of text are identical, we'll just keep one.
             row['speaker'] = next_row['speaker'] if len(next_row['speaker'].strip()) > 0 else \
                 row['speaker']
-            if row['text'].strip() != next_row['text'].strip():
-                row['text'] += (" " + next_row['text'])
+            spc = " " if len(next_row['text']) and next_row['text'][0] != ' ' else ''
+            row['text'] += (spc + next_row['text'])
             row['modified_end'] = next_row['modified_end']
             row['original_end'] = next_row['original_end']
             self.remove_row(next_ndx)
@@ -936,7 +941,7 @@ class TranscriptScreen(Widget):
             self.lines[0]['selected'] = True
 
         if selected_index is not None:
-            tv  = self.transcript_view
+            tv = self.transcript_view
             lm = tv.layout_manager
             lm.focus = True
 
@@ -944,6 +949,7 @@ class TranscriptScreen(Widget):
             def update(_tm):
                 tv.scroll_y = min(1, max(0, 1 - scroll_height/(lm.height-tvh)))
                 self.select_row(selected_index)
+                tv.refresh_from_data()
 
             if scroll_height > tvh:
                 Clock.schedule_once(update)
@@ -1010,7 +1016,7 @@ class TranscriptScreen(Widget):
                 self.update_progress(dialog, prog = ((len(transcript["transcription"])/length)*1000))
 
         if transcript and not self.stop.is_set():
-            self.filename = ""
+            self.edit_row.json_file = ""
             self.dirty = True
             self.load_transcript_from_dict(transcript)
 
@@ -1032,7 +1038,7 @@ class TranscriptScreen(Widget):
         threading.Thread(target=self.transcribe_thread, args=(content,)).start()
 
     def show_load(self):
-        p, _ = os.path.split(self.filename)
+        p, _ = os.path.split(self.edit_row.json_file)
         p = p or app_path()
         content = LoadDialog(load=self.load, cancel=self.dismiss_popup, path=p)
         self._popup = Popup(title="Load file", content=content,
@@ -1046,7 +1052,7 @@ class TranscriptScreen(Widget):
 
         if cancel is None: cancel = self.dismiss_popup
 
-        p, f = os.path.split(self.filename)
+        p, f = os.path.split(self.edit_row.json_file)
         p = p or app_path()
         f = f or f'{self.video_edit.text.strip()}.transcript.json'
 
@@ -1104,7 +1110,8 @@ class TranscriptScreen(Widget):
     ### End of wrappers
 
     def on_export_checked(self, evt, index:int, checked:bool):
-        self.lines[index]['export'] = checked
+        if self.lines is not None and index is not None:
+            self.lines[index]['export'] = checked
 
     def on_save_request(self, _, requester:Widget):
         self.show_save(return_focus=requester)
@@ -1173,10 +1180,11 @@ class TranscriptScreen(Widget):
 
     def on_update_request(self, _, requester, advance = True):
 
-        editrow = self.edit_row
 
         # The user has requested that the row be updated.
+        editrow = self.edit_row
         row = editrow.line
+        
         if row['speaker'] != editrow.speaker.text:
             self.dirty = True
             row['speaker'] = editrow.speaker.text
@@ -1185,6 +1193,7 @@ class TranscriptScreen(Widget):
             self.dirty = True
             row['text'] = editrow.sentence.text
             row['size'] = self.calculate_size(row)
+
 
         # There is one little trickyness in that the start
         # has been updated, the end of the previous row has
@@ -1251,14 +1260,15 @@ class TranscriptScreen(Widget):
         if not filename:
             return
         self.dirty = False
-
+        json_file = str(os.path.join(path, filename))
+        self.edit_row.json_file = json_file
         save_results(
             self.title_label.text.strip(),
             self.episode_edit.text.strip(),
             self.video_edit.text.strip(),
             self.edit_row.audio_file,
             str(os.path.join(path, "audio_samples")),
-            str(os.path.join(path, filename)),
+            json_file,
             True,
             export,
             self.edit_row.audio,
@@ -1268,7 +1278,7 @@ class TranscriptScreen(Widget):
         save_finished()
 
     def load_transcript_from_file(self, filename: str):
-        self.filename = filename
+        self.edit_row.json_file = filename
         with open(filename, encoding='utf8') as f:
             transcript = json.load(f)
 
