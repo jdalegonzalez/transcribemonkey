@@ -8,6 +8,7 @@ import logging
 import html
 import datetime
 from enum import Enum
+from itertools import zip_longest
 
 from word2number import w2n
 
@@ -17,11 +18,11 @@ from hanziconv import HanziConv
 import jieba
 
 import numpy as np
-from transformers import pipeline
+from transformers import pipeline, Pipeline
 
 import stable_whisper
 import faster_whisper
-from faster_whisper.transcribe import Segment, TranscriptionInfo
+from faster_whisper.transcribe import Segment, Word, TranscriptionInfo
 
 import torch
 
@@ -40,8 +41,10 @@ class TranscribeMethods(Enum):
 ##### Constants #####
 DEVICE = "cpu"
 COMPUTE_TYPE = "int8"
-MODEL_NAME = "large-v3-turbo"
-SAMPLING_RATE = 16000 # 22050 #
+MODEL_NAME = "large-v3"
+
+MAX_INITIAL_SEGMENT_LENGTH = 15 # in seconds
+SPEAKER_CERTAINTY_CUTOFF = .60 # 0 - 1
 
 HF_MODELS = {
     "tiny.en": "openai/whisper-tiny.en",
@@ -133,9 +136,14 @@ class SubSegment():
     def end(self, value):
         self._end = float(value)
 
+    @property
+    def duration(self):
+        return self._end - self._start
+    
     def to_dict(self) -> SegmentDict:
         result = {}
         result['row_id'] = self.id
+        result['original_speaker'] = self.speaker
         result['speaker'] = self.speaker
         result['speaker_confidence'] = self.speaker_confidence
         result['original_start'] = self.start
@@ -212,6 +220,12 @@ def get_arguments():
         description="Creates a transcription of a Youtube video"
     )
     parser.add_argument(
+        "-c", "--clips",
+        help="A set of clips to request in the form of start1,stop1,start2,stop2",
+        dest="clips",
+        default=None
+    )
+    parser.add_argument(
         "-d", "--doc", 
         help="Create a word document from a json file.  The -t argument must also be passed.",
         dest='word_doc',
@@ -229,6 +243,11 @@ def get_arguments():
         help="The root folder to put the individual audio segments.  If missing, audio segments will not be generated.",
         dest="audio_folder",
         default=""
+    )
+    parser.add_argument('--lang',
+        help="The language the audio is in, if known.",
+        dest='lang',
+        default="en"
     )
     parser.add_argument(
         '-l', '--log_level',
@@ -278,6 +297,9 @@ def get_arguments():
             if not os.path.exists(new_file) or not os.path.isfile(new_file):
                 parser.error(f'The transcript {new_file} does not exist')
             args.transcript_json = new_file
+    if args.clips:
+        clips = list(zip_longest(*(iter([float(clip) for clip in args.clips.split(",")]),) * 2))
+        args.clips = clips
 
     return args
 
@@ -383,7 +405,8 @@ def transcribe(
         device:str=DEVICE, 
         compute_type:str=COMPUTE_TYPE, 
         suppress_numerals:bool=True,
-        language:str="en") -> tuple[TranscriptionType, AudioType]:
+        language:str="en",
+        clips: list[tuple[float, float]] = None) -> tuple[Union[TranscriptionType, list[TranscriptionType]], AudioType]:
 
     """
     Passes the audio to faster_whisper for transcription and then
@@ -403,7 +426,7 @@ def transcribe(
     "Ula speaks Mandarin. " \
     "- 你好妈 - Uh... em... Yeah. I'm good. 你呢. " \
     "Produce a verbatim transcription."
-
+    hotwords = "好大家好"
     ## Things I could maybe tune...
     ## beam_size
     ## best_of
@@ -413,28 +436,31 @@ def transcribe(
     ## suppress_blank
 
     kwargs = {
-        'language':           language,
+        'language': language,
         'without_timestamps': True,
-        'word_timestamps':    True,
-        'initial_prompt':     prompt_str,
+        'word_timestamps': True,
+        'initial_prompt': prompt_str,
+        'hotwords': hotwords,
         'beam_size': 1,
         'best_of': 10,
-        'suppress_blank': False
+        'suppress_blank': False,
+        'repetition_penalty': .9
     }
 
     # Hugging face version gets killed on my machine, so...
     # I wouldn't recommend using it.
     if method == TranscribeMethods.HUGGING_FACE:
-        from transformers import AutoProcessor
-        processor = AutoProcessor.from_pretrained(HF_MODELS[model_name])
-        tokenizer = processor.tokenizer
-        whisper_model = stable_whisper.load_hf_whisper(model_name, device)
-        sr = whisper_model.sampling_rate
-        kwargs.pop('without_timestamps')
-        kwargs.pop('initial_prompt')
-        kwargs.pop('beam_size')
-        kwargs.pop('best_of')
-        kwargs.pop('suppress_blank')
+        # from transformers import AutoProcessor
+        # processor = AutoProcessor.from_pretrained(HF_MODELS[model_name])
+        # tokenizer = processor.tokenizer
+        # whisper_model = stable_whisper.load_hf_whisper(model_name, device)
+        # sr = whisper_model.sampling_rate
+        # kwargs.pop('without_timestamps', None)
+        # kwargs.pop('initial_prompt', None)
+        # kwargs.pop('beam_size', None)
+        # kwargs.pop('best_of', None)
+        # kwargs.pop('suppress_blank', None)
+        pass
     else:    
         whisper_model = stable_whisper.load_faster_whisper(
             model_name, device=device, compute_type=compute_type
@@ -450,31 +476,39 @@ def transcribe(
     
     audio_waveform, _ = audio_from_file(audio_file, sampling_rate=sr)
 
-    noun = ''
+    def doit(wav):
+        if method == TranscribeMethods.STABLE_WHISPER:
+            # O5OjKjno9Pw
+            # duration: 41:08
+            # "large-v3" INFO:root:Transcription finished in 00:27:51
+            _, info = whisper_model.transcribe(wav, **kwargs)
+            result:stable_whisper.WhisperResult = whisper_model.transcribe_stable(wav, **kwargs)
+            transcription = (result, info)
+        else:
+            # O5OjKjno9Pw
+            # duration: 41:08
+            # "large-v3" INFO:root:Transcription finished in 00:31:15
+            transcription = whisper_model.transcribe(wav, **kwargs)
 
-    transcription = None
-    if method == TranscribeMethods.STABLE_WHISPER:
-        # O5OjKjno9Pw
-        # duration: 41:08
-        # "large-v3" INFO:root:Transcription finished in 00:27:51
-        _, info = whisper_model.transcribe(audio_waveform, **kwargs)
-        results = whisper_model.transcribe_stable(audio_waveform, **kwargs)
-        transcription = [results, info]
-        noun = 'Transcribed'
+        return transcription
+    
+    if not clips:
+        logging.info(f'Transcribing audio with duration: {to_minutes_seconds(len(audio_waveform) / sr)}')
+        results = doit(audio_waveform)
     else:
-        # O5OjKjno9Pw
-        # duration: 41:08
-        # "large-v3" INFO:root:Transcription finished in 00:31:15
-        transcription = whisper_model.transcribe(audio_waveform, **kwargs)
-        noun = 'Transcribing'
+        results = []
+        for clip in clips:
+            start, stop = clip
+            if stop is None: stop = len(audio_waveform) / sr
+            logging.info(f'Transcribing audio clip [{start},{stop}] with duration: {to_minutes_seconds(stop - start)}')
+            wav, _ = SubSegment.slice_audio((audio_waveform, sr), start, stop)
+            results.append(doit(wav))
 
     # clear gpu vram
     del whisper_model
     torch.cuda.empty_cache()
-    _, info = transcription
-    logging.info(f'{noun} audio with duration: {to_minutes_seconds(info.duration)}')
 
-    return transcription, [audio_waveform, sr]
+    return (results, (audio_waveform, sr))
 
 def add_subsegment(segments:list[SubSegment], new_segment:SubSegment, collapse_speaker:bool=True):
     """
@@ -497,21 +531,34 @@ def add_subsegment(segments:list[SubSegment], new_segment:SubSegment, collapse_s
         segments.append(new_segment)
 
 
+def speaker_for_word(audio: AudioType, clip_end: float, classifier: Pipeline, word:Word) -> SpeakerGuess:
+    wav, sr = audio
+    if clip_end is None: clip_end = len(wav)/sr
+    word_duration = word.end - word.start
+    pad = word_duration / 4
+    audio_start = max(0, word.start - pad)
+    audio_end = min(clip_end, word.end + pad)
+    guess = guess_speaker(SubSegment.slice_audio(audio, audio_start, audio_end), classifier)
+    logging.debug(f'word "{word.word}" said by {guess['label']} at {guess['score']}')
+    return guess
+
 # punctuation:str="\"'.。,，!！?？:：”)]}、"
 def split_segment(
         yt_id: str,
-        audio: tuple[np.ndarray, float], 
+        audio: AudioType, 
         segment: Segment, 
         last_sub: Optional[SubSegment],
-        punctuation:str="\"'.。!！?？:：”)]}、") -> list[SubSegment]:
+        punctuation:str="\"'.。!！?？:：”)]}、",
+        classifier:Optional[Pipeline] = None
+    ) -> tuple[list[SubSegment], str]:
 
+    
     result = []
     def do_append(seg_to_append):
         # There are times when whisper's word timings aren't accurate.
         # There is a package called stable-ts, which I am importing,
-        # that is supposed to make it better - and I guess it does -
-        # but at the expense of REALLY slowing things down.  So,
-        # although it feels janky, I'm adding a bunch of special case
+        # that is supposed to make it better but it's still a little
+        # crappy...  So, although it feels janky, I'm adding some special case
         # stuff to do a little cleanup.
         # - If there is a gap between the last sentence and this one,
         #   we'll assign part of the gap to the end of the previous sentence
@@ -559,8 +606,22 @@ def split_segment(
     punc_tuples = tuple(list(punctuation))
 
     episode = ""
+    prev_speaker = None
     add_to_episode = False
+    wav, sr = audio
+    clip_end = len(wav)/sr
     for word in segment.words:
+        speaker_guess = speaker_for_word(audio, clip_end, classifier, word)
+        speaker = speaker_guess['label'] if speaker_guess['score'] > SPEAKER_CERTAINTY_CUTOFF else ""
+        if prev_speaker is None and speaker: prev_speaker = speaker
+
+        # If we've switched speakers, we're going to break the subsegment
+        if speaker and speaker != prev_speaker:
+            do_append(subseg)
+            subseg = None
+            prev_speaker = None
+            add_to_episode = False
+
         if add_to_episode:
             episode += word.word
 
@@ -575,12 +636,18 @@ def split_segment(
                 audio=audio
             )
         else:
-            subseg.text += word.word.replace("Eula", "Ula")
+            subseg.text += word.word.replace("Yula", "Ula").replace("Eula", "Ula")
             subseg.end = word.end
 
         add_to_episode = add_to_episode or (not episode and word.word.strip().lower() == "episode")
-        if word.word.endswith(punc_tuples):
+        
+        # Occasionally, we'll get in a spot where for some reason, we're not given any
+        # punctuation for a LOOONG time.  This makes for very difficult to manage
+        # chucks of text.  So, if adding the word makes the segment longer than a, 
+        # max length, we're just going to stop.  The reconnect bit will put the words back.
+        if word.word.endswith(punc_tuples) or subseg.duration >= MAX_INITIAL_SEGMENT_LENGTH:
             do_append(subseg)
+            prev_speaker = None
             subseg = None
             add_to_episode = False
     
@@ -604,6 +671,13 @@ def split_segment(
     return (result, episode)
 
 
+def guess_speaker(audio: AudioType, classifier: Pipeline) -> SpeakerGuess:
+    # If we have too short a sample, we'll just return
+    # ""
+    raw, sr = audio
+    if len(raw) < 1000: return {"label": "", "score": 0}
+    return classifier({"sampling_rate": sr, "raw": raw}, top_k=1)[0]
+
 def get_segments(
         video_id:str,
         transcript: TranscriptionType,
@@ -612,29 +686,36 @@ def get_segments(
         episode:str="") -> tuple[str, list[SubSegment]]:
 
     model = "./trained-speakerbox"
-    classifier = pipeline("audio-classification", model=model, device=DEVICE)
+    classifier: Pipeline = pipeline("audio-classification", model=model, device=DEVICE)
 
     segments, info = transcript
     duration = info.duration
 
     flat_subs = []
     quit_looping = False
-    speaker_certainty_cutoff = .65
 
     for segment in segments:
         if quit_looping:
             break
-        subs, potential_episode = split_segment(video_id, audio, segment, flat_subs[-1] if flat_subs else None)
-        if not episode and potential_episode:
-            episode = potential_episode
+
+        subs, potential_episode = split_segment(
+            video_id,
+            audio,
+            segment,
+            flat_subs[-1] if flat_subs else None, 
+            classifier=classifier
+        )
+        if not episode and potential_episode: episode = potential_episode
+
         cnt = 0
         sub_len = len(subs)
+
         for subseg in subs:
             raw, sampling_rate = subseg.slice()
             ### If there is too little audio in the sample, we're just going to ignore attempting
             ### set the speaker
             if len(subseg.text.strip()) and len(raw) > 1000:
-                subseg.set_speaker(classifier({"sampling_rate": sampling_rate, "raw": raw}, top_k=1)[0])
+                subseg.set_speaker(guess_speaker((raw, sampling_rate), classifier))
             else:
                 subseg.speaker = ""
                 subseg.speaker_confidence = 0
@@ -652,7 +733,8 @@ def get_segments(
             # We also know that this sub ends in a stop character and our splitter sees
             # a stop character as a word.  So, "one word" is a length < 3 (1, or 2)
             is_one_word = len(jieba.lcut(subseg.text)) < 3
-            add_subsegment(flat_subs, subseg, collapse_speaker=subseg.speaker_confidence >= speaker_certainty_cutoff and not is_one_word)
+            collapse = subseg.speaker_confidence >= SPEAKER_CERTAINTY_CUTOFF and not is_one_word
+            add_subsegment(flat_subs, subseg, collapse_speaker=collapse)
 
             if on_seg:
                 quit_looping = on_seg(f'Added segment {subseg.id}', cnt, sub_len, subseg.end / duration)
@@ -662,10 +744,13 @@ def get_segments(
         if flat_subs:
             flat_subs[-1].text = flat_subs[-1].text.strip()
 
-    return episode, flat_subs
+    return (episode, flat_subs)
 
-def audio_from_file(source, sampling_rate = SAMPLING_RATE):
-    aud = faster_whisper.decode_audio(source, sampling_rate=sampling_rate)
+def audio_from_file(source:str, sampling_rate:int = None):
+    # If we don't get a sampling rate, use whatever faster whisper
+    # defaults to.
+    kwargs = {'sampling_rate': sampling_rate} if sampling_rate is not None else {}
+    aud = faster_whisper.decode_audio(source, **kwargs)
     return (aud, sampling_rate)
 
 def save(
@@ -677,7 +762,7 @@ def save(
         json_destination: str,
         save_json:bool, 
         save_audio:bool, 
-        audio: tuple[np.ndarray, float], 
+        audio: AudioType, 
         segments:Union[SegmentDict, SubSegment]):
 
         if not save_audio and not save_json:
@@ -708,7 +793,7 @@ def save(
             if values['selected'] and seen_selected:
                 logging.warning(f'More than one selected row at {len(transcript["transcription"])}')
                 values['selected'] = False
-            values.pop('size')
+            values.pop('size', None)
             seen_selected = bool(seen_selected or values['selected'])
             transcript["transcription"].append(values)
             if save_audio and values['export']:
@@ -718,6 +803,15 @@ def save(
         with open(json_destination, 'w', encoding='utf8') as stream:
             json.dump(transcript, stream, indent = 2, ensure_ascii=False)
             stream.write("\n")
+
+def duration_to_hours_minutes_seconds(dur):
+    seconds_in_day = 24 * 60 * 60
+    dur_pieces = divmod(dur.days * seconds_in_day + dur.seconds, 60)
+    seconds = dur_pieces[1]
+    dur_pieces = divmod(dur_pieces[0], 60)
+    hours = dur_pieces[0]
+    minutes = dur_pieces[1]
+    return (hours, minutes, seconds)
 
 if __name__ == '__main__':
 
@@ -739,8 +833,17 @@ if __name__ == '__main__':
 
     start_trans = datetime.datetime.now()
 
-    transcript, audio = transcribe(audio_file)
-    episode, flat_subs = get_segments(args.video_id, transcript, audio, args.episode)
+    transcript, audio = transcribe(audio_file, language=args.lang, clips=args.clips)
+    if type(transcript) == list:
+        episode = ""
+        flat_subs = []
+        for script in transcript:
+            print(type(script), script)
+            candidate, subs = get_segments(args.video_id, transcript, audio, args.episode)
+            if not episode: episode = candidate
+            flat_subs += subs
+    else:
+        episode, flat_subs = get_segments(args.video_id, transcript, audio, args.episode)
 
     json_path = args.transcript_json
     save_json = bool(json_path and json_path.lower() != 'false')
@@ -763,10 +866,5 @@ if __name__ == '__main__':
     
     end_trans = datetime.datetime.now()
     diff = end_trans - start_trans
-    seconds_in_day = 24 * 60 * 60
-    diff_pieces = divmod(diff.days * seconds_in_day + diff.seconds, 60)
-    seconds = diff_pieces[1]
-    diff_pieces = divmod(diff_pieces[0], 60)
-    hours = diff_pieces[0]
-    minutes = diff_pieces[1]
+    hours, minutes, seconds = duration_to_hours_minutes_seconds(diff)
     logging.info(f"Transcription finished in {hours:02}:{minutes:02}:{seconds:02}")

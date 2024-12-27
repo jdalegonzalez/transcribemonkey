@@ -517,6 +517,9 @@ class TranscriptRow(RecycleDataViewBehavior, BoxLayout):
     background_color = ListProperty([1, 1, 1, 1])
     border_color = ListProperty([0, 1, .25, .25])
 
+    def on_export(self, widget, active):
+        pass
+
     def export_checked(self, _, active):
         events.export_checked(self.index, active)
 
@@ -1072,20 +1075,24 @@ class TranscriptScreen(Widget):
     def on_rowselect(self, _, ndx:int):
         self.edit_row.set_data(ndx, self.lines[ndx])
 
-    def deselect_row(self, ndx:int) -> None:
-        if ndx >= 0 and ndx < len(self.lines):
+    def deselect_row(self, ndx:int = None) -> None:
+        if ndx is None: ndx = self.edit_row.active_ndx
+        if ndx is not None and ndx >= 0 and ndx < len(self.lines):
             self.lines[ndx]['selected'] = False
 
         self.transcript_view.layout_manager.deselect_node(ndx)
 
-    def select_row(self, ndx:int) -> None:
-        curr = self.edit_row.active_ndx
+    def selected_rows(self):
+        for el in self.lines:
+            if el['selected']: yield el
 
-        if curr != ndx and curr is not None and curr >=0 and curr < len(self.lines):
-            self.lines[curr]['selected'] = False
+    def select_row(self, ndx:int) -> None:
+        self.deselect_row()
+        # I MAY have to put this in if I keep somehow getting
+        # extra selected dudes.
+        # for row in self.selected_rows(): row['selected'] = False
         if ndx is not None and ndx >= 0 and ndx < len(self.lines):
             self.lines[ndx]['selected'] = True
-
         self.transcript_view.layout_manager.select_node(ndx)
 
     ### These wrapper functions let me change my mind
