@@ -631,51 +631,36 @@ def _clean_up_episode(episode:str, punc_tuples:tuple[list[str]]) -> str:
     return episode
 
 # punctuation:str="\"'.。,，!！?？:：”)]}、"
-def split_segment(
+def _split_segment(
         yt_id: str,
         audio: AudioType, 
         segment: Segment, 
         last_sub: Optional[SubSegment],
         punctuation:str="\"'.。!！?？:：”)]}、",
-        classifier:Optional[Pipeline] = None,
         is_clips: bool = False
     ) -> tuple[list[SubSegment], str, str]:
 
-    result = []
     start_segment = SubSegment.start_segment(yt_id, audio)
-
-    id_base = segment.id
-    sub_id = 0
-    subseg = None
     punc_tuples = tuple(list(punctuation))
 
+    id_base = segment.id
+
+    result = []
+    sub_id = 0
+    subseg = None
     episode = ""
-    prev_speaker = None
     add_to_episode = False
-    speaker_guess = None
 
     for word in segment.words:
-
+        print(word.word)
         if _word_audio_too_short(word):
+            print("Too short")
             _expand_last_seg(subseg, last_sub, word)
             continue
-
-        if not is_clips:
-            speaker_guess = speaker_for_word(audio, classifier, word, speaker_guess)
-            speaker = speaker_guess['label']
-            if prev_speaker is None: prev_speaker = speaker
-
-            # If we've switched speakers, we're going to break the subsegment
-            if speaker and speaker != prev_speaker:
-                if subseg: _append_segment(start_segment, result, subseg, last_sub, is_clips)
-                subseg = None
-                prev_speaker = None
-                add_to_episode = False
 
         if add_to_episode: episode += word.word
 
         subseg, sub_id = _add_word_to_subseg(yt_id, id_base, audio, subseg, sub_id, word)
-        
         add_to_episode = add_to_episode or _is_episode(episode, word)
         
         # Occasionally, we'll get in a spot where for some reason, we're not given any
@@ -688,14 +673,14 @@ def split_segment(
         # and we shouldn't try any fancy breaking.
         if not is_clips and (word.word.endswith(punc_tuples) or subseg.duration >= MAX_INITIAL_SEGMENT_LENGTH):
             _append_segment(start_segment, result, subseg, last_sub, is_clips)            
-            prev_speaker = None
             subseg = None
             add_to_episode = False
-    
+
     # [end for word in segment.words]
 
     # If we've got a leftover subseg, we'll add it now.
-    if subseg: _append_segment(start_segment, result, subseg, last_sub, is_clips)
+    if subseg:
+        _append_segment(start_segment, result, subseg, last_sub, is_clips)
 
     episode = _clean_up_episode(episode, punc_tuples)
 
@@ -731,12 +716,11 @@ def get_segments(
         if quit_looping:
             break
 
-        subs, potential_episode = split_segment(
+        subs, potential_episode = _split_segment(
             video_id,
             audio,
             segment,
             flat_subs[-1] if flat_subs else None, 
-            classifier=classifier,
             is_clips=is_clipped
         )
         if not episode and potential_episode: episode = potential_episode
