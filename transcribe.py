@@ -8,7 +8,6 @@ import logging
 import html
 import datetime
 from enum import Enum
-from itertools import zip_longest
 
 from word2number import w2n
 
@@ -44,7 +43,7 @@ COMPUTE_TYPE = "int8"
 MODEL_NAME = "large-v3"
 
 MAX_INITIAL_SEGMENT_LENGTH = 15 # in seconds
-SPEAKER_CERTAINTY_CUTOFF = .60 # 0 - 1
+SPEAKER_COLLAPSE_CERTAINTY_CUTOFF = .70 # 0 - 1
 
 HF_MODELS = {
     "tiny.en": "openai/whisper-tiny.en",
@@ -122,6 +121,17 @@ class SubSegment():
         self.selected = selected
         self.export = export
 
+    def start_segment(yt_id: str, audio: AudioType):
+        return SubSegment(
+            yt_id=yt_id,
+            id='0.0', 
+            start=0,
+            end=0,
+            text="",
+            speaker="",
+            audio=audio
+        )
+    
     @property
     def start(self):
         return self._start
@@ -297,8 +307,9 @@ def get_arguments():
             if not os.path.exists(new_file) or not os.path.isfile(new_file):
                 parser.error(f'The transcript {new_file} does not exist')
             args.transcript_json = new_file
+
     if args.clips:
-        clips = list(zip_longest(*(iter([float(clip) for clip in args.clips.split(",")]),) * 2))
+        clips = [float(clip) for clip in args.clips.split(",")]
         args.clips = clips
 
     return args
@@ -406,7 +417,7 @@ def transcribe(
         compute_type:str=COMPUTE_TYPE, 
         suppress_numerals:bool=True,
         language:str="en",
-        clips: list[tuple[float, float]] = None) -> tuple[Union[TranscriptionType, list[TranscriptionType]], AudioType]:
+        clips: list[tuple[float, float]] = None) -> tuple[TranscriptionType, AudioType]:
 
     """
     Passes the audio to faster_whisper for transcription and then
@@ -447,6 +458,7 @@ def transcribe(
         'repetition_penalty': .9
     }
 
+    if clips is not None: kwargs['clip_timestamps'] = clips
     # Hugging face version gets killed on my machine, so...
     # I wouldn't recommend using it.
     if method == TranscribeMethods.HUGGING_FACE:
@@ -476,39 +488,26 @@ def transcribe(
     
     audio_waveform, _ = audio_from_file(audio_file, sampling_rate=sr)
 
-    def doit(wav):
-        if method == TranscribeMethods.STABLE_WHISPER:
-            # O5OjKjno9Pw
-            # duration: 41:08
-            # "large-v3" INFO:root:Transcription finished in 00:27:51
-            _, info = whisper_model.transcribe(wav, **kwargs)
-            result:stable_whisper.WhisperResult = whisper_model.transcribe_stable(wav, **kwargs)
-            transcription = (result, info)
-        else:
-            # O5OjKjno9Pw
-            # duration: 41:08
-            # "large-v3" INFO:root:Transcription finished in 00:31:15
-            transcription = whisper_model.transcribe(wav, **kwargs)
+    logging.info(f'Transcribing audio with duration: {to_minutes_seconds(len(audio_waveform) / sr)}')
 
-        return transcription
-    
-    if not clips:
-        logging.info(f'Transcribing audio with duration: {to_minutes_seconds(len(audio_waveform) / sr)}')
-        results = doit(audio_waveform)
+    if method == TranscribeMethods.STABLE_WHISPER:
+        # O5OjKjno9Pw
+        # duration: 41:08
+        # "large-v3" INFO:root:Transcription finished in 00:27:51
+        _, info = whisper_model.transcribe(audio_waveform, **kwargs)
+        result:stable_whisper.WhisperResult = whisper_model.transcribe_stable(audio_waveform, **kwargs)
+        transcription = (result, info)
     else:
-        results = []
-        for clip in clips:
-            start, stop = clip
-            if stop is None: stop = len(audio_waveform) / sr
-            logging.info(f'Transcribing audio clip [{start},{stop}] with duration: {to_minutes_seconds(stop - start)}')
-            wav, _ = SubSegment.slice_audio((audio_waveform, sr), start, stop)
-            results.append(doit(wav))
+        # O5OjKjno9Pw
+        # duration: 41:08
+        # "large-v3" INFO:root:Transcription finished in 00:31:15
+        transcription = whisper_model.transcribe(audio_waveform, **kwargs)
 
     # clear gpu vram
     del whisper_model
     torch.cuda.empty_cache()
 
-    return (results, (audio_waveform, sr))
+    return (transcription, (audio_waveform, sr))
 
 def add_subsegment(segments:list[SubSegment], new_segment:SubSegment, collapse_speaker:bool=True):
     """
@@ -531,30 +530,53 @@ def add_subsegment(segments:list[SubSegment], new_segment:SubSegment, collapse_s
         segments.append(new_segment)
 
 
-def speaker_for_word(audio: AudioType, clip_end: float, classifier: Pipeline, word:Word) -> SpeakerGuess:
+def speaker_for_word(audio: AudioType, classifier: Pipeline, word:Word, previous:SpeakerGuess) -> SpeakerGuess:
     wav, sr = audio
-    if clip_end is None: clip_end = len(wav)/sr
+    clip_end = len(wav)/sr
+
     word_duration = word.end - word.start
     pad = word_duration / 4
     audio_start = max(0, word.start - pad)
     audio_end = min(clip_end, word.end + pad)
+
     guess = guess_speaker(SubSegment.slice_audio(audio, audio_start, audio_end), classifier)
+    if guess == {'label': "", 'score': 0} and previous is not None:
+        guess = previous
+
     logging.debug(f'word "{word.word}" said by {guess['label']} at {guess['score']}')
+
     return guess
 
-# punctuation:str="\"'.。,，!！?？:：”)]}、"
-def split_segment(
-        yt_id: str,
-        audio: AudioType, 
-        segment: Segment, 
-        last_sub: Optional[SubSegment],
-        punctuation:str="\"'.。!！?？:：”)]}、",
-        classifier:Optional[Pipeline] = None
-    ) -> tuple[list[SubSegment], str]:
+def _is_episode(episode: str, word: Word) -> bool:
+    return not episode and word.word.strip().lower() == "episode"
 
+def _word_audio_too_short(word: Word) -> bool:
+    return word.end - word.start < .1
     
-    result = []
-    def do_append(seg_to_append):
+def _expand_last_seg(subseg:Union[SubSegment,None], last_sub:Union[SubSegment,None], word: Word):
+    if subseg is not None: subseg.end = word.end
+    elif last_sub is not None: last_sub.end = word.end
+
+def _add_word_to_subseg(yt_id: str, id_base: str, audio: AudioType, subseg:Union[SubSegment, None], sub_id: int, word: Word):
+    text = word.word.replace("Yula", "Ula").replace("Eula", "Ula")
+    if subseg is None:
+        sub_id += 1
+        subseg = SubSegment(
+            yt_id=yt_id,
+            id=f'{id_base}.{sub_id}', 
+            start=word.start,
+            end=word.end,
+            text=text,
+            audio=audio
+        )
+    else:
+        subseg.text += text
+        subseg.end = word.end
+
+    return (subseg, sub_id)
+    
+
+def _append_segment(start_seg:SubSegment, segments:list[SubSegment], seg_to_append:SubSegment, last_segment:SubSegment, is_clips: bool):
         # There are times when whisper's word timings aren't accurate.
         # There is a package called stable-ts, which I am importing,
         # that is supposed to make it better but it's still a little
@@ -566,31 +588,25 @@ def split_segment(
         # - If the text is identical and the duration is less than a second,
         #   just bump the last guy and drop the segment.
 
+        prev_subseg = segments[-1] if segments else last_segment
         trunky = 100
-        prev_subseg = result[-1] if result else last_sub
-
         if (prev_subseg and
             seg_to_append.text == prev_subseg.text and
             prev_subseg.end  - seg_to_append.end < 1):
+            # If the text is the same and the audio is very short,
+            # just bump the end and move on.
             prev_subseg.end = seg_to_append.end
             return
 
         # If the very first segment doesn't start at 0, we'll add a buffer
         # segment to account for all the space.
-        if not prev_subseg and seg_to_append.start > 0:
+        if not prev_subseg and seg_to_append.start > 0 and not is_clips:
             new_start_end = round(seg_to_append.start, 2)
+            start_seg.end = new_start_end
             seg_to_append.start = new_start_end
-            result.append(SubSegment(
-                yt_id=yt_id,
-                id='0.0', 
-                start=0,
-                end=new_start_end,
-                text="",
-                speaker="",
-                audio=audio
-            ))
+            segments.append(start_seg)
     
-        if prev_subseg and prev_subseg.end != subseg.start:
+        if prev_subseg and prev_subseg.end != seg_to_append.start:
             # Truncate the left_over to two decimal places.
             diff = seg_to_append.start - prev_subseg.end
             end_pad = diff * .35
@@ -598,67 +614,11 @@ def split_segment(
             prev_subseg.end = math.floor((prev_subseg.end + end_pad) * trunky) / trunky
             seg_to_append.start = math.floor((seg_to_append.start - beg_pad) * trunky) / trunky
 
-        result.append(seg_to_append)
+        segments.append(seg_to_append)
 
-    id_base = segment.id
-    sub_id = 0
-    subseg = None
-    punc_tuples = tuple(list(punctuation))
+def _clean_up_episode(episode:str, punc_tuples:tuple[list[str]]) -> str:
 
-    episode = ""
-    prev_speaker = None
-    add_to_episode = False
-    wav, sr = audio
-    clip_end = len(wav)/sr
-    for word in segment.words:
-        speaker_guess = speaker_for_word(audio, clip_end, classifier, word)
-        speaker = speaker_guess['label'] if speaker_guess['score'] > SPEAKER_CERTAINTY_CUTOFF else ""
-        if prev_speaker is None and speaker: prev_speaker = speaker
-
-        # If we've switched speakers, we're going to break the subsegment
-        if speaker and speaker != prev_speaker:
-            do_append(subseg)
-            subseg = None
-            prev_speaker = None
-            add_to_episode = False
-
-        if add_to_episode:
-            episode += word.word
-
-        if subseg is None:
-            sub_id += 1
-            subseg = SubSegment(
-                yt_id=yt_id,
-                id=f'{id_base}.{sub_id}', 
-                start=word.start,
-                end=word.end,
-                text=word.word,
-                audio=audio
-            )
-        else:
-            subseg.text += word.word.replace("Yula", "Ula").replace("Eula", "Ula")
-            subseg.end = word.end
-
-        add_to_episode = add_to_episode or (not episode and word.word.strip().lower() == "episode")
-        
-        # Occasionally, we'll get in a spot where for some reason, we're not given any
-        # punctuation for a LOOONG time.  This makes for very difficult to manage
-        # chucks of text.  So, if adding the word makes the segment longer than a, 
-        # max length, we're just going to stop.  The reconnect bit will put the words back.
-        if word.word.endswith(punc_tuples) or subseg.duration >= MAX_INITIAL_SEGMENT_LENGTH:
-            do_append(subseg)
-            prev_speaker = None
-            subseg = None
-            add_to_episode = False
-    
-    # If we've got a leftover subseg, we'll add it now.
-    if subseg:
-        do_append(subseg)
-        subseg = None
-
-    for c in punc_tuples:
-        episode = episode.replace(c, ' ')
-
+    for c in punc_tuples: episode = episode.replace(c, ' ')
     episode = episode.strip()
     if episode:
         try:
@@ -668,7 +628,80 @@ def split_segment(
 
         logging.info(f'Detected episode: {episode}')
 
+    return episode
+
+# punctuation:str="\"'.。,，!！?？:：”)]}、"
+def split_segment(
+        yt_id: str,
+        audio: AudioType, 
+        segment: Segment, 
+        last_sub: Optional[SubSegment],
+        punctuation:str="\"'.。!！?？:：”)]}、",
+        classifier:Optional[Pipeline] = None,
+        is_clips: bool = False
+    ) -> tuple[list[SubSegment], str, str]:
+
+    result = []
+    start_segment = SubSegment.start_segment(yt_id, audio)
+
+    id_base = segment.id
+    sub_id = 0
+    subseg = None
+    punc_tuples = tuple(list(punctuation))
+
+    episode = ""
+    prev_speaker = None
+    add_to_episode = False
+    speaker_guess = None
+
+    for word in segment.words:
+
+        if _word_audio_too_short(word):
+            _expand_last_seg(subseg, last_sub, word)
+            continue
+
+        if not is_clips:
+            speaker_guess = speaker_for_word(audio, classifier, word, speaker_guess)
+            speaker = speaker_guess['label']
+            if prev_speaker is None: prev_speaker = speaker
+
+            # If we've switched speakers, we're going to break the subsegment
+            if speaker and speaker != prev_speaker:
+                if subseg: _append_segment(start_segment, result, subseg, last_sub, is_clips)
+                subseg = None
+                prev_speaker = None
+                add_to_episode = False
+
+        if add_to_episode: episode += word.word
+
+        subseg, sub_id = _add_word_to_subseg(yt_id, id_base, audio, subseg, sub_id, word)
+        
+        add_to_episode = add_to_episode or _is_episode(episode, word)
+        
+        # Occasionally, we'll get in a spot where for some reason, we're not given any
+        # punctuation for a LOOONG time.  This makes for very difficult to manage
+        # chucks of text.  So, if adding the word makes the segment longer than a, 
+        # max length, we're just going to stop.  The reconnect bit will put the words back.
+
+        # If this is a series of clips, we're
+        # going to assume each one is a single utterance 
+        # and we shouldn't try any fancy breaking.
+        if not is_clips and (word.word.endswith(punc_tuples) or subseg.duration >= MAX_INITIAL_SEGMENT_LENGTH):
+            _append_segment(start_segment, result, subseg, last_sub, is_clips)            
+            prev_speaker = None
+            subseg = None
+            add_to_episode = False
+    
+    # [end for word in segment.words]
+
+    # If we've got a leftover subseg, we'll add it now.
+    if subseg: _append_segment(start_segment, result, subseg, last_sub, is_clips)
+
+    episode = _clean_up_episode(episode, punc_tuples)
+
     return (result, episode)
+
+# [end def split_segment]
 
 
 def guess_speaker(audio: AudioType, classifier: Pipeline) -> SpeakerGuess:
@@ -683,7 +716,8 @@ def get_segments(
         transcript: TranscriptionType,
         audio:AudioType,
         on_seg:callable=None,
-        episode:str="") -> tuple[str, list[SubSegment]]:
+        episode:str="",
+        is_clipped:bool = False) -> tuple[str, list[SubSegment]]:
 
     model = "./trained-speakerbox"
     classifier: Pipeline = pipeline("audio-classification", model=model, device=DEVICE)
@@ -693,7 +727,6 @@ def get_segments(
 
     flat_subs = []
     quit_looping = False
-
     for segment in segments:
         if quit_looping:
             break
@@ -703,7 +736,8 @@ def get_segments(
             audio,
             segment,
             flat_subs[-1] if flat_subs else None, 
-            classifier=classifier
+            classifier=classifier,
+            is_clips=is_clipped
         )
         if not episode and potential_episode: episode = potential_episode
 
@@ -727,13 +761,13 @@ def get_segments(
 
             # We're only going to collapse the speaker segments when
             # we're pretty sure that the speaker assignment was accurate.
-            # We're deciding that "pretty sure" is the speaker_certainty_cutoff
+            # We're deciding that "pretty sure" is the SPEAKER_COLLAPSE_CERTAINTY_CUTOFF
             # Also, there is a special case that happens when a sentence is VERY short.
             # Usually the speaker detector doesn't do a good job.
             # We also know that this sub ends in a stop character and our splitter sees
             # a stop character as a word.  So, "one word" is a length < 3 (1, or 2)
             is_one_word = len(jieba.lcut(subseg.text)) < 3
-            collapse = subseg.speaker_confidence >= SPEAKER_CERTAINTY_CUTOFF and not is_one_word
+            collapse = subseg.speaker_confidence >= SPEAKER_COLLAPSE_CERTAINTY_CUTOFF and not is_one_word
             add_subsegment(flat_subs, subseg, collapse_speaker=collapse)
 
             if on_seg:
@@ -834,16 +868,14 @@ if __name__ == '__main__':
     start_trans = datetime.datetime.now()
 
     transcript, audio = transcribe(audio_file, language=args.lang, clips=args.clips)
-    if type(transcript) == list:
-        episode = ""
-        flat_subs = []
-        for script in transcript:
-            print(type(script), script)
-            candidate, subs = get_segments(args.video_id, transcript, audio, args.episode)
-            if not episode: episode = candidate
-            flat_subs += subs
-    else:
-        episode, flat_subs = get_segments(args.video_id, transcript, audio, args.episode)
+    
+    episode, flat_subs = get_segments(
+        args.video_id,
+        transcript,
+        audio,
+        args.episode,
+        is_clipped=(args.clips is not None and args.clips)
+    )
 
     json_path = args.transcript_json
     save_json = bool(json_path and json_path.lower() != 'false')

@@ -1087,10 +1087,7 @@ class TranscriptScreen(Widget):
             if el['selected']: yield el
 
     def select_row(self, ndx:int) -> None:
-        self.deselect_row()
-        # I MAY have to put this in if I keep somehow getting
-        # extra selected dudes.
-        # for row in self.selected_rows(): row['selected'] = False
+        for row in self.selected_rows(): row['selected'] = False
         if ndx is not None and ndx >= 0 and ndx < len(self.lines):
             self.lines[ndx]['selected'] = True
         self.transcript_view.layout_manager.select_node(ndx)
@@ -1297,6 +1294,9 @@ class TranscriptApp(App):
         screen = TranscriptScreen()
         # If we're given a json file as an argument, we'll
         # load it into the UI.
+        if args.video_id:
+            screen.video_edit.text = args.video_id
+            
         if args.transcript_json:
             screen.load_transcript_from_file(args.transcript_json)
 
@@ -1312,11 +1312,22 @@ def get_arguments():
         description="Creates a transcription of a Youtube video"
     )
     parser.add_argument(
+        "-v", "--video", 
+        help="The Youtube ID for the video to be transcribed",
+        dest='video_id',
+        default=None
+    )
+    parser.add_argument(
         "-t", "--transcript", 
         help="The path to a saved transcript to load when the app loads",
         dest='transcript_json',
     )
-    return parser.parse_args()
+    args = parser.parse_args()
+    if os.path.isdir(args.transcript_json) and args.video_id is not None:
+        filename = os.path.join(args.transcript_json, f'{args.video_id}.transcript.json')
+        if os.path.isfile(filename):
+            args.transcript_json = filename
+    return args
 
 if __name__ == '__main__':
     Config.set('kivy', 'exit_on_escape', 0)
