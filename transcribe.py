@@ -1,15 +1,18 @@
 #! python
 import argparse
 import os
+import re
 import sys
 import json
 import math
 import logging
 import html
 import datetime
+import string
 from enum import Enum
 
 from word2number import w2n
+from xpinyin import Pinyin
 
 from typing import Optional, TypedDict, Union, Iterable
 
@@ -43,8 +46,10 @@ COMPUTE_TYPE = "int8"
 MODEL_NAME = "large-v3"
 
 MAX_INITIAL_SEGMENT_LENGTH = 15 # in seconds
-SPEAKER_COLLAPSE_CERTAINTY_CUTOFF = .70 # 0 - 1
-
+SPEAKER_COLLAPSE_CERTAINTY_CUTOFF = .60 # 0 - 1
+SWITCH_SPEAKER_CUTOFF = .70 # 0 - 1
+TOO_SHORT_TO_GUESS_SECONDS = .25
+NO_GUESS = {'label': "", 'score': 0}
 HF_MODELS = {
     "tiny.en": "openai/whisper-tiny.en",
     "tiny": "openai/whisper-tiny",
@@ -96,6 +101,10 @@ class SubSegment():
     most part, we'll get complete sentences from each speaker.  These
     SubSegment classes capture those sentences.
     """
+    chinese_characters_range = '\u4e00-\u9fff'
+    chinese_character_re = re.compile(f'[{chinese_characters_range}]')
+    pinyin_obj = Pinyin()
+
     def __init__(self,
         yt_id: str,
         id: str,
@@ -114,7 +123,9 @@ class SubSegment():
         self._start: float = float(start)
         self._end: float = float(end)
         self.text: str = text
+        self.pinyin = ''
         self.audio: AudioType = audio
+        self.original_speaker: Optional[str] = speaker
         self.speaker: Optional[str] = speaker
         self.speaker_confidence: Optional[float] = speaker_confidence
         self.selectable = selectable
@@ -149,11 +160,23 @@ class SubSegment():
     @property
     def duration(self):
         return self._end - self._start
+
+    def from_segment(yt_id: str, audio: AudioType, seg:Segment):
+        ret = SubSegment(
+            yt_id=yt_id,
+            audio=audio,
+            id=seg.id,
+            start=seg.start,
+            end=seg.end,
+            text=seg.text
+        )
+        ret.finalize()
+        return ret
     
     def to_dict(self) -> SegmentDict:
         result = {}
         result['row_id'] = self.id
-        result['original_speaker'] = self.speaker
+        result['original_speaker'] = self.original_speaker
         result['speaker'] = self.speaker
         result['speaker_confidence'] = self.speaker_confidence
         result['original_start'] = self.start
@@ -161,16 +184,26 @@ class SubSegment():
         result['modified_start'] = self.start
         result['modified_end'] = self.end
         result['text'] = HanziConv.toSimplified(self.text.strip())
-
+        result['pinyin'] = self.pinyin
         result['selectable'] = self.selectable
         result['selected'] = self.selected
         result['export'] = self.export
 
         return result
 
+    def finalize(self):
+        self.text = HanziConv.toSimplified(self.text.strip())
+        contains_chinese = SubSegment.chinese_character_re.search(self.text) is not None
+        if contains_chinese:
+            self.pinyin = SubSegment.pinyin_obj.get_pinyin(self.text, ' ', tone_marks="marks").strip()
+            # TODO: translation would go here.
+            pass
+
     def set_speaker(self, guess:SpeakerGuess):
-        self.speaker = guess['label'].capitalize()
+        self.original_speaker = guess['label'].capitalize()
+        self.speaker = self.original_speaker
         self.speaker_confidence = guess['score']
+        logging.debug(f'Set: {str(self)}')
 
     def slice_audio(audio:AudioType, start:float, end:float) -> AudioType:
         """
@@ -213,9 +246,9 @@ class SubSegment():
         elif self.speaker.strip():
             speak_str = f'{self.speaker.strip()} ({round(self.speaker_confidence, 4):.4f}): '
         return speak_str
-    
+
     def __repr__(self):
-        return f'[id: {self.id}, start: {self.start}, end: {self.end}, text: "{self.text}", speaker: "{self.speaker_string()}"]'
+        return f'[id: {self.id}, start: {self.start}, end: {self.end}, text: "{self.text.strip()}", speaker: "{self.speaker_string()}"]'
 
     def __str__(self):
         return f'[{to_minutes_seconds(self.start)}] {self.speaker_string()}{self.text.strip()}'
@@ -429,7 +462,8 @@ def transcribe(
     # that is supposed to make it timestamps better. And, maybe it does??
     # but maybe it slows things WAY down.  Change below from transcribe
     # to transcribe_stable and back to see.
-    method = TranscribeMethods.STABLE_WHISPER
+    #method = TranscribeMethods.STABLE_WHISPER
+    method = TranscribeMethods.STABLE_WHISPER if not clips else TranscribeMethods.FASTER_WHISPER
 
     prompt_str = \
     "This is a dialog between Tom and Ula. " \
@@ -451,11 +485,9 @@ def transcribe(
         'without_timestamps': True,
         'word_timestamps': True,
         'initial_prompt': prompt_str,
-        'hotwords': hotwords,
         'beam_size': 1,
         'best_of': 10,
-        'suppress_blank': False,
-        'repetition_penalty': .9
+        'suppress_blank': False
     }
 
     if clips is not None: kwargs['clip_timestamps'] = clips
@@ -509,6 +541,23 @@ def transcribe(
 
     return (transcription, (audio_waveform, sr))
 
+def matching_speaker(seg: SubSegment, seg2: SubSegment):
+    if not seg or not seg2:
+        return None
+
+    # Never merge with a "non-speaker"
+    if seg.speaker_confidence == 0:
+        return None
+
+    if seg.speaker == seg2.speaker:
+        return seg.speaker
+    if not seg.speaker and seg2.speaker:
+        return seg2.speaker
+    if seg.speaker and not seg2.speaker:
+        return seg.speaker
+    
+    return None
+
 def add_subsegment(segments:list[SubSegment], new_segment:SubSegment, collapse_speaker:bool=True):
     """
     Adds a segment to a segements array.  If the speaker
@@ -523,35 +572,50 @@ def add_subsegment(segments:list[SubSegment], new_segment:SubSegment, collapse_s
 
     # Get the last segment
     check_seg = segments[-1] if segments else None
-    if check_seg and check_seg.speaker == new_segment.speaker and collapse_speaker:
+    two_minutes = 120
+    match = matching_speaker(check_seg, new_segment)
+    new_dur = new_segment.end - (check_seg.start if check_seg else new_segment.start)
+    if match is not None and collapse_speaker and new_dur < two_minutes:
+        check_seg.speaker = match
         check_seg.end = new_segment.end
         check_seg.text += new_segment.text
+        return False
     else:
         segments.append(new_segment)
+        return True
 
+def speaker_for_clip(
+    audio: AudioType,
+    classifier: Pipeline,
+    piece:Union[Word, SubSegment],
+    previous: Union[SpeakerGuess, None]=None) -> SpeakerGuess:
 
-def speaker_for_word(audio: AudioType, classifier: Pipeline, word:Word, previous:SpeakerGuess) -> SpeakerGuess:
-    wav, sr = audio
-    clip_end = len(wav)/sr
+    # If there isn't text, then there can't be a speaker.
+    duration = piece.end - piece.start
+    is_subseg = type(piece) == SubSegment
+    txt = (piece.text if is_subseg else piece.word).strip()
+    if not txt: return previous if previous is not None else NO_GUESS
 
-    word_duration = word.end - word.start
-    pad = word_duration / 4
-    audio_start = max(0, word.start - pad)
-    audio_end = min(clip_end, word.end + pad)
+    pad = duration / 4
+    if is_subseg: pad = min(.5, pad)
+
+    audio_start = max(0, piece.start - pad)
+    audio_end = piece.end + pad
 
     guess = guess_speaker(SubSegment.slice_audio(audio, audio_start, audio_end), classifier)
-    if guess == {'label': "", 'score': 0} and previous is not None:
-        guess = previous
+    if guess == NO_GUESS and previous is not None: guess = previous
 
-    logging.debug(f'word "{word.word}" said by {guess['label']} at {guess['score']}')
+    logging.debug(f'"{txt}" said by {guess['label']} at {guess['score']}')
 
     return guess
 
-def _is_episode(episode: str, word: Word) -> bool:
-    return not episode and word.word.strip().lower() == "episode"
+def _is_episode(episode: str, word: str) -> bool:
+    if episode: return False
+    w = (word or "").strip().lower().translate(str.maketrans('','',string.punctuation))
+    return (w == "episode")
 
 def _word_audio_too_short(word: Word) -> bool:
-    return word.end - word.start < .1
+    return word.end - word.start < TOO_SHORT_TO_GUESS_SECONDS
     
 def _expand_last_seg(subseg:Union[SubSegment,None], last_sub:Union[SubSegment,None], word: Word):
     if subseg is not None: subseg.end = word.end
@@ -616,10 +680,9 @@ def _append_segment(start_seg:SubSegment, segments:list[SubSegment], seg_to_appe
 
         segments.append(seg_to_append)
 
-def _clean_up_episode(episode:str, punc_tuples:tuple[list[str]]) -> str:
+def _clean_up_episode(episode:str) -> str:
 
-    for c in punc_tuples: episode = episode.replace(c, ' ')
-    episode = episode.strip()
+    episode = episode.translate(str.maketrans(string.punctuation, ' ' * len(string.punctuation))).strip()
     if episode:
         try:
             episode = str(w2n.word_to_num(episode))
@@ -630,6 +693,23 @@ def _clean_up_episode(episode:str, punc_tuples:tuple[list[str]]) -> str:
 
     return episode
 
+def _should_skip_word(last_sub:Union[SubSegment, None], subseg:Union[SubSegment, None], word: Word) -> bool:
+    if last_sub is None and subseg is None: return False
+    last_text = subseg.text if subseg is not None else last_sub.text
+    if _word_audio_too_short(word) and word.word.strip() == last_text.strip():
+        _expand_last_seg(subseg, last_sub, word)
+        return True
+    
+    return False
+
+def _speakers_switched(audio:AudioType, classifier:Pipeline, word:Word, guess:SpeakerGuess, prev_speaker:str) -> tuple[bool, str, SpeakerGuess]:
+    if not classifier: return (False, "", NO_GUESS)
+    guess = speaker_for_clip(audio, classifier, word, previous=guess)
+    speaker = guess['label'] if guess['score'] > SWITCH_SPEAKER_CUTOFF else prev_speaker
+    if prev_speaker is None: prev_speaker = speaker            
+    switched = speaker and speaker != prev_speaker
+    return (switched, speaker, guess)
+
 # punctuation:str="\"'.。,，!！?？:：”)]}、"
 def _split_segment(
         yt_id: str,
@@ -637,6 +717,7 @@ def _split_segment(
         segment: Segment, 
         last_sub: Optional[SubSegment],
         punctuation:str="\"'.。!！?？:：”)]}、",
+        classifier:Optional[Pipeline] = None,
         is_clips: bool = False
     ) -> tuple[list[SubSegment], str, str]:
 
@@ -649,20 +730,26 @@ def _split_segment(
     sub_id = 0
     subseg = None
     episode = ""
-    add_to_episode = False
+    add_to_episode = last_sub and _is_episode(episode, last_sub.text.split(' ')[-1])
+    guess = None
+    speaker = None
 
     for word in segment.words:
-        print(word.word)
-        if _word_audio_too_short(word):
-            print("Too short")
-            _expand_last_seg(subseg, last_sub, word)
-            continue
+
+        if _should_skip_word(last_sub, subseg, word): continue
+
+        # If we've switched speakers, we're going to break the subsegment
+        switched, speaker, guess = _speakers_switched(audio, classifier, word, guess, speaker)
+        if subseg and switched:
+            if subseg: _append_segment(start_segment, result, subseg, last_sub, is_clips)
+            subseg = None
+            add_to_episode = False
 
         if add_to_episode: episode += word.word
 
         subseg, sub_id = _add_word_to_subseg(yt_id, id_base, audio, subseg, sub_id, word)
-        add_to_episode = add_to_episode or _is_episode(episode, word)
-        
+        add_to_episode = add_to_episode or _is_episode(episode, word.word)
+
         # Occasionally, we'll get in a spot where for some reason, we're not given any
         # punctuation for a LOOONG time.  This makes for very difficult to manage
         # chucks of text.  So, if adding the word makes the segment longer than a, 
@@ -682,7 +769,7 @@ def _split_segment(
     if subseg:
         _append_segment(start_segment, result, subseg, last_sub, is_clips)
 
-    episode = _clean_up_episode(episode, punc_tuples)
+    episode = _clean_up_episode(episode)
 
     return (result, episode)
 
@@ -690,10 +777,9 @@ def _split_segment(
 
 
 def guess_speaker(audio: AudioType, classifier: Pipeline) -> SpeakerGuess:
-    # If we have too short a sample, we'll just return
-    # ""
+    # If we have too short a sample, we'll just return NO_GUESS
     raw, sr = audio
-    if len(raw) < 1000: return {"label": "", "score": 0}
+    if len(raw) < (sr * TOO_SHORT_TO_GUESS_SECONDS): return NO_GUESS
     return classifier({"sampling_rate": sr, "raw": raw}, top_k=1)[0]
 
 def get_segments(
@@ -712,36 +798,30 @@ def get_segments(
 
     flat_subs = []
     quit_looping = False
+
     for segment in segments:
-        if quit_looping:
-            break
+
+        if quit_looping: break
 
         subs, potential_episode = _split_segment(
-            video_id,
-            audio,
-            segment,
-            flat_subs[-1] if flat_subs else None, 
-            is_clips=is_clipped
+            video_id, audio, segment, flat_subs[-1] if flat_subs else None,
+            classifier=classifier, is_clips=is_clipped
         )
         if not episode and potential_episode: episode = potential_episode
 
         cnt = 0
         sub_len = len(subs)
-
         for subseg in subs:
-            raw, sampling_rate = subseg.slice()
+            cnt += 1
+
             ### If there is too little audio in the sample, we're just going to ignore attempting
             ### set the speaker
-            if len(subseg.text.strip()) and len(raw) > 1000:
-                subseg.set_speaker(guess_speaker((raw, sampling_rate), classifier))
+            if len(subseg.text.strip()) and subseg.duration >= TOO_SHORT_TO_GUESS_SECONDS:
+                subseg.set_speaker(speaker_for_clip(audio, classifier, subseg))
             else:
                 subseg.speaker = ""
                 subseg.speaker_confidence = 0
                 subseg.text = "<Intro Music>" if not subseg.text.strip() and subseg.start == 0.0 else subseg.text
-
-            if flat_subs and flat_subs[-1].speaker != subseg.speaker:
-                flat_subs[-1].text = flat_subs[-1].text.strip()
-                logging.info(flat_subs[-1])
 
             # We're only going to collapse the speaker segments when
             # we're pretty sure that the speaker assignment was accurate.
@@ -750,17 +830,31 @@ def get_segments(
             # Usually the speaker detector doesn't do a good job.
             # We also know that this sub ends in a stop character and our splitter sees
             # a stop character as a word.  So, "one word" is a length < 3 (1, or 2)
+
             is_one_word = len(jieba.lcut(subseg.text)) < 3
-            collapse = subseg.speaker_confidence >= SPEAKER_COLLAPSE_CERTAINTY_CUTOFF and not is_one_word
-            add_subsegment(flat_subs, subseg, collapse_speaker=collapse)
+            if not is_one_word and subseg.speaker_confidence < SPEAKER_COLLAPSE_CERTAINTY_CUTOFF:
+                subseg.speaker = ""
+
+            if add_subsegment(flat_subs, subseg, collapse_speaker=(not is_one_word)):
+                # a new segment got added so the previous segment can be finalized and
+                # logged (if there is a previous one.  len - 2 is the index)
+                if len(flat_subs) > 1:
+                    sub = flat_subs[-2]
+                    sub.finalize()
+                    logging.info(sub)
 
             if on_seg:
                 quit_looping = on_seg(f'Added segment {subseg.id}', cnt, sub_len, subseg.end / duration)
-                if quit_looping:
-                    break
+                if quit_looping: break
+        
+        # [end for subseg in subs]
 
-        if flat_subs:
-            flat_subs[-1].text = flat_subs[-1].text.strip()
+    # [ end for segment in segments]
+
+    if flat_subs:
+        # catch the last segment which won't have been printed or finalized
+        flat_subs[-1].finalize()
+        logging.info(flat_subs[-1])
 
     return (episode, flat_subs)
 
