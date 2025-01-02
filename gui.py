@@ -16,8 +16,10 @@ from transcribe import (
     get_youtube_audio,
     save as save_results,
     to_minutes_seconds,
-    transcribe,
+    transcribe
 )
+from transcribe import translate as transcribe_translate
+
 from transcribe_events import TranscribeEvents
 from audio_segment import AudioSegment
 
@@ -279,6 +281,11 @@ class ProgressDialog(FloatLayout):
     progress = ObjectProperty(None)
     cancel = ObjectProperty(None)
 
+class TranslateDialog(FloatLayout):
+    chinese = StringProperty(None)
+    english = StringProperty(None)
+    cancel = ObjectProperty(None)
+
 class LoadDialog(FloatLayout):
     load = ObjectProperty(None)
     cancel = ObjectProperty(None)
@@ -411,6 +418,12 @@ class EditRow(GridLayout):
             self.sentence.text = ""
 
     def set_data(self, ndx, line):
+
+        # If we've got changes and a reselect of the same line
+        # occurs, don't throw those changes away
+        if self.dirty and self.active_ndx == ndx:
+            return
+
         self.speaker.disabled = False
         self.dirty = False
 
@@ -773,7 +786,43 @@ class TranscriptScreen(Widget):
 
         Clock.schedule_once(f)
 
-    def split_row(self, *args):
+    @mainthread
+    def update_clip(self, transcript):
+        new_txt = ""
+        # For some reason, there seems to be trash segement after the
+        # bit I'm actually trying to get.  So, I'm going to ignore
+        # the final segment.
+        for row in transcript['transcription']: new_txt += (" " + row['text'])
+        self.edit_row.sentence.text = new_txt.strip()
+
+    def translate(self, *_):
+        editrow: EditRow = self.edit_row
+        ndx = editrow.active_ndx
+        row, _ = self.current_row(ndx)
+        if not row: return
+        txt = editrow.sentence.text
+        trans = transcribe_translate(txt)
+        self.show_translate(txt, trans)
+
+    def re_transcribe(self, *_):
+        editrow: EditRow = self.edit_row
+        ndx = editrow.active_ndx
+        row, _ = self.current_row(ndx)
+        if not row: return
+        clips=[editrow.start_time.time_value, editrow.end_time.time_value]
+        self.do_transcribe(audio_file=editrow.audio_file, clips=clips)
+
+    def _next_id(self, row, ndx):
+        next_row, _ =  self.next_row(ndx)
+        id_pieces = row['row_id'].split(".")
+        id_pieces[-1] = str(int(id_pieces[-1])+1)
+        new_id = ".".join(id_pieces)        
+        if not next_row is None and next_row['row_id'] == new_id:
+            new_id = row['row_id'] + ".0"
+    
+        return new_id
+    
+    def split_row(self, *_):
         ndx = self.edit_row.active_ndx
         row, _ = self.current_row(ndx)
 
@@ -785,38 +834,31 @@ class TranscriptScreen(Widget):
             return
 
         # Figure out what the ID of the new row should be...
-        next_row, _ =  self.next_row(ndx)
-        id_pieces = row['row_id'].split(".")
-        id_pieces[-1] = str(int(id_pieces[-1])+1)
-        new_id = ".".join(id_pieces)        
-        if not next_row is None and next_row['row_id'] == new_id:
-            new_id = row['row_id'] + ".0"
 
         # If the slider is currently positioned at the beginning of the 
         # clip, or the cursor is at the beginning of the string, 
         # we'll use a naive "split the thing in half and duplicate" the 
         # text.  Otherwise, we'll use the cursor position to determine
         # what stays in this row and the slider to determine the end time.
+        new_row = dict(row)
+        new_row['row_id'] = self._next_id(row, ndx)
+
         cur = self.edit_row.sentence.cursor_index()
         val = self.edit_row.slider.value
-        new_row = dict(row)
-        new_row['row_id'] = new_id
 
         if val != 0 and cur != 0:
-            dur = (val/self.edit_row.slider.max)*(row['modified_end'] - row['modified_start'])
-            end = round(row['modified_start'] + dur, 2)
             row['text'] = self.edit_row.sentence.text[:cur]
             new_row['text'] = self.edit_row.sentence.text[cur:]
-            row['modified_end'] = end
-            new_row['modified_start'] = end
-            spin = self.edit_row.speaker
-            speaker = spin.text
-            cur_index = spin.values.index(speaker)
-            new_index = 1 if cur_index == 0 else 0
-            new_row['speaker'] = spin.values[new_index]
-        else:            
-            row['modified_end'] = round(row['modified_start'] + dur,2)
-            new_row['modified_start'] = row['modified_end']
+            self.edit_row.sentence.text = row['text']
+            dur = (val/self.edit_row.slider.max)*(row['modified_end'] - row['modified_start'])
+
+        row['modified_end'] = round(row['modified_start'] + dur, 2)
+        new_row['modified_start'] = row['modified_end']
+        spin = self.edit_row.speaker
+        speaker = spin.text
+        cur_index = spin.values.index(speaker)
+        new_index = 1 if cur_index == 0 else 0
+        new_row['speaker'] = spin.values[new_index]
 
         self.insert_row(ndx + 1, new_row)
         self.edit_row.end_time.base_time = None
@@ -828,7 +870,7 @@ class TranscriptScreen(Widget):
 
         Clock.schedule_once(f)
 
-    def join_row(self, *args):
+    def join_row(self, *_):
         ndx = self.edit_row.active_ndx
         row, _ = self.current_row(ndx)
 
@@ -963,42 +1005,53 @@ class TranscriptScreen(Widget):
         self.loaded = True
 
 
-    def transcribe_thread(self, dialog):
+    def transcribe_thread(self, dialog, audio_file, clips):
 
         def on_progress(stream: Stream, _: bytes, bytes_remaining: int):
             filesize = stream.filesize
             bytes_received = filesize - bytes_remaining
             self.update_progress(dialog, text=None, prog=(bytes_received/filesize) * 1000)
 
-        def on_segment(text, num, length, percent_complete) -> bool:
-            if not length:
-                num = 0
-                length = 1
-
+        def on_segment(text, _num, _length, percent_complete) -> bool:
             self.update_progress(dialog, text=text, prog = percent_complete * 1000)
-
             return self.stop.is_set() 
 
-        audio_file = None
         yt = None
-        if not self.stop.is_set():
+        vid = self.video_edit.text.strip()
+        is_short = self.short_checkbox.active
+        if not audio_file and not self.stop.is_set():
             self.update_progress(dialog, text = f'Downloading {self.video_edit.text.strip()}', prog = 0)
-            vid = self.video_edit.text.strip()
-            is_short = self.short_checkbox.active
             audio_file, _, yt = get_youtube_audio(vid, filename=download_dir(), is_short=is_short, progress_callback=on_progress)
 
-        transcript_segments = None
+        tscript = None
         audio = None
         Logger.parent.addHandler(self.handler)
-
         if audio_file and not self.stop.is_set():
-            self.update_progress(dialog, text = f'Transcribing {yt.title}', prog=0)
-            transcript_segments, audio = transcribe(audio_file)
+            message = yt.title if yt is not None else f'{clips[0]}:{clips[1]}'
+            self.update_progress(dialog, text = f'Transcribing {message}', prog=0)
+            kwargs = {'clips': clips} if clips else {}
+            tscript, audio = transcribe(audio_file, **kwargs)
             self.update_progress(dialog, prog=0)
 
         flat_subs = None
-        if audio and transcript_segments and not self.stop.is_set():
-            episode, flat_subs = get_segments(vid, transcript_segments, audio, on_seg=on_segment, episode=self.episode)
+
+        if audio and tscript and not self.stop.is_set():
+
+            episode = self.episode_edit.text
+            is_clips = clips is not None
+            ignore = .1 if is_clips else 0
+            # If we're doing clips, for some reason we get a tiny extra
+            # segment that is trash but gets translated into a hallucinated
+            # string.  We're going to toss them.
+            episode, flat_subs = get_segments(
+                vid, 
+                tscript, 
+                audio, 
+                on_seg=on_segment, 
+                episode=episode, 
+                is_clips=is_clips,
+                ignore_shorter_than=ignore
+            )
 
         Logger.parent.removeHandler(self.handler)
 
@@ -1006,7 +1059,7 @@ class TranscriptScreen(Widget):
         if flat_subs and not self.stop.is_set():
             self.update_progress(dialog, text=f'Loading data', prog=0)
             transcript = {
-                'title': yt.title,
+                'title': yt.title if yt else '',
                 'episode': episode,
                 'YouTubeID': vid,
                 'AudioFile': audio_file,
@@ -1019,14 +1072,17 @@ class TranscriptScreen(Widget):
                 self.update_progress(dialog, prog = ((len(transcript["transcription"])/length)*1000))
 
         if transcript and not self.stop.is_set():
-            self.edit_row.json_file = ""
-            self.dirty = True
-            self.load_transcript_from_dict(transcript)
+            if clips is None:
+                self.edit_row.json_file = ""
+                self.dirty = True
+                self.load_transcript_from_dict(transcript)
+            else:
+                self.update_clip(transcript)
 
         self.cancel_transcribe()
 
     @mainthread
-    def do_transcribe(self):
+    def do_transcribe(self, audio_file: Optional[str] = None, clips:Optional[list[float]]=None):
         # if we've got a running transcribe, kill it.
         if not self.stop.is_set():
             self.stop.set()
@@ -1038,7 +1094,12 @@ class TranscriptScreen(Widget):
             content=content, size_hint=(0.5, 0.5))
         self._popup.open()
 
-        threading.Thread(target=self.transcribe_thread, args=(content,)).start()
+        threading.Thread(target=self.transcribe_thread, args=(content,audio_file,clips)).start()
+
+    def show_translate(self, chinese, english):
+        content = TranslateDialog(chinese=chinese,english=english, cancel=self.dismiss_popup)
+        self._popup = Popup(title='Translation', content=content,size_hint=(1,0.8))
+        self._popup.open()
 
     def show_load(self):
         p, _ = os.path.split(self.edit_row.json_file)
@@ -1073,6 +1134,8 @@ class TranscriptScreen(Widget):
         self._popup.open()
 
     def on_rowselect(self, _, ndx:int):
+        for row in self.selected_rows(): row['selected'] = False
+        self.lines[ndx]['selected'] = True
         self.edit_row.set_data(ndx, self.lines[ndx])
 
     def deselect_row(self, ndx:int = None) -> None:
@@ -1296,7 +1359,7 @@ class TranscriptApp(App):
         # load it into the UI.
         if args.video_id:
             screen.video_edit.text = args.video_id
-            
+
         if args.transcript_json:
             screen.load_transcript_from_file(args.transcript_json)
 

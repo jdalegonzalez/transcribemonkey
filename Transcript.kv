@@ -416,6 +416,8 @@
             text: ""
             text_size: self.size
             halign: 'center'
+            font_name: 'fonts/NotoSansSC-Regular.otf'
+
         ProgressBar:
             id: progress
             max: 1000
@@ -423,6 +425,25 @@
         Button:
             text: "Cancel"
             on_release: root.cancel()
+
+<TranslateDialog>:
+    BoxLayout:
+        size: root.size
+        pos: root.pos
+        orientation: "vertical"
+        FullLabel:
+            halign: 'left'
+            text: root.chinese
+            font_name: 'fonts/NotoSansSC-Regular.otf'
+        FullLabel:
+            halign: 'left'
+            text: root.english
+        BoxLayout:
+            size_hint_y: None
+            height: 50
+            Button:
+                text: "Cancel"
+                on_release: root.cancel()
 
 <LoadDialog>:
     BoxLayout:
@@ -599,27 +620,45 @@
                 json_file: ""
             BoxLayout:
                 size_hint: .04, None
-                height: 100
+                height: 160
                 pos_hint: {'center_y': .5}
                 padding: 10, 0, 10, 0
                 spacing: 5
                 orientation: "vertical"
                 CircleButton:
                     size_hint: None, None
-                    text: "-"
-                    width: 50
-                    height: 50
+                    text: "?"
+                    width: 40
+                    height: 40
                     bold: True
-                    font_size: 50
+                    font_size: 35
+                    on_release: root.re_transcribe(*args)
+                    disabled: id_editrow.active_ndx is None
+                CircleButton:
+                    size_hint: None, None
+                    text: "t"
+                    width: 40
+                    height: 40
+                    bold: True
+                    font_size: 35
+                    on_release: root.translate(*args)
+                    disabled: id_editrow.active_ndx is None
+                CircleButton:
+                    size_hint: None, None
+                    text: "-"
+                    width: 40
+                    height: 40
+                    bold: True
+                    font_size: 40
                     on_release: root.join_row(*args)
                     disabled: id_editrow.active_ndx is None
                 CircleButton:
                     size_hint: None, None
-                    width: 50
-                    height: 50
+                    width: 40
+                    height: 40
                     text: "+"
                     bold: True
-                    font_size: 50
+                    font_size: 40
                     on_release: root.split_row(*args)
                     disabled: id_editrow.active_ndx is None
         

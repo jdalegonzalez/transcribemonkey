@@ -14,6 +14,14 @@ from enum import Enum
 from word2number import w2n
 from xpinyin import Pinyin
 
+# EXCEPTIONALLY janky but translator uses a very old httpx.
+# If I need to fix it, the fix is to monkey patch httpx to
+# be backward compatible with googletrans
+#import httpcore
+#setattr(httpcore, 'SyncHTTPTransport', 'AsyncHTTPProxy')
+
+from googletrans import Translator
+
 from typing import Optional, TypedDict, Union, Iterable
 
 from hanziconv import HanziConv
@@ -48,7 +56,10 @@ MODEL_NAME = "large-v3"
 MAX_INITIAL_SEGMENT_LENGTH = 15 # in seconds
 SPEAKER_COLLAPSE_CERTAINTY_CUTOFF = .60 # 0 - 1
 SWITCH_SPEAKER_CUTOFF = .70 # 0 - 1
-TOO_SHORT_TO_GUESS_SECONDS = .25
+TOO_SHORT_TO_GUESS_SECONDS = .2
+TOO_SHORT_TO_BE_REAL_SECONDS = .1
+MIN_PROBABILITY_TO_INCLUDE = .4
+
 NO_GUESS = {'label': "", 'score': 0}
 HF_MODELS = {
     "tiny.en": "openai/whisper-tiny.en",
@@ -64,6 +75,19 @@ HF_MODELS = {
     "large-v3": "openai/whisper-large-v3",
     "large": "openai/whisper-large-v3"
 }
+
+hallucinations = [
+    "Subtitles by the Amara.org community",
+    "请不吝点赞 订阅 转发 打赏支持明镜与点点栏目"
+]
+
+translator = Translator()
+
+# There is no real reason to put this 'priming' request here.
+# I'm doing it because jieba logs some stuff on the first 
+# request you make to it and I want it to be before all the
+# stuff I log.
+jieba.lcut("好大家好")
 
 #####################
 
@@ -93,6 +117,11 @@ def to_minutes_seconds(seconds:float) -> str:
 AudioType = tuple[np.ndarray, float]
 TranscriptionType = tuple[Iterable[Segment], TranscriptionInfo]
 
+chinese_characters_range = '\u4e00-\u9fff'
+chinese_character_re = re.compile(f'[{chinese_characters_range}]')
+def contains_chinese(text:str) -> bool:
+    return chinese_character_re.search(text) is not None
+
 class SubSegment():
     """
     When faster-whisper segments audio, in many cases, the segments span
@@ -101,8 +130,6 @@ class SubSegment():
     most part, we'll get complete sentences from each speaker.  These
     SubSegment classes capture those sentences.
     """
-    chinese_characters_range = '\u4e00-\u9fff'
-    chinese_character_re = re.compile(f'[{chinese_characters_range}]')
     pinyin_obj = Pinyin()
 
     def __init__(self,
@@ -123,7 +150,8 @@ class SubSegment():
         self._start: float = float(start)
         self._end: float = float(end)
         self.text: str = text
-        self.pinyin = ''
+        self.pinyin: str = ''
+        self.translation: str = ''
         self.audio: AudioType = audio
         self.original_speaker: Optional[str] = speaker
         self.speaker: Optional[str] = speaker
@@ -161,7 +189,7 @@ class SubSegment():
     def duration(self):
         return self._end - self._start
 
-    def from_segment(yt_id: str, audio: AudioType, seg:Segment):
+    def from_segment(yt_id: str, audio: AudioType, seg:Segment, is_clips:bool=False):
         ret = SubSegment(
             yt_id=yt_id,
             audio=audio,
@@ -185,19 +213,31 @@ class SubSegment():
         result['modified_end'] = self.end
         result['text'] = HanziConv.toSimplified(self.text.strip())
         result['pinyin'] = self.pinyin
+        result['translation'] = self.translation
         result['selectable'] = self.selectable
         result['selected'] = self.selected
         result['export'] = self.export
 
         return result
 
-    def finalize(self):
+    def finalize(self, translate: bool=False):
         self.text = HanziConv.toSimplified(self.text.strip())
-        contains_chinese = SubSegment.chinese_character_re.search(self.text) is not None
-        if contains_chinese:
-            self.pinyin = SubSegment.pinyin_obj.get_pinyin(self.text, ' ', tone_marks="marks").strip()
-            # TODO: translation would go here.
-            pass
+        # I may want to drop this code.  It could get really expensive
+        # Sometimes, we find that a otherwise OK piece of text, ends with
+        # a hallucination.  We're going to pull those off.
+        for hal in hallucinations:
+            if self.text.endswith(hal):
+                self.text = self.text[:-len(hal)]
+                break
+
+        if contains_chinese(self.text) and translate:
+            p = ""
+            
+            for word in jieba.lcut(self.text):
+                p += (" " + SubSegment.pinyin_obj.get_pinyin(word, '', tone_marks="marks"))
+            
+            self.pinyin = p.strip()
+            self.translation = translate(self.text, src='zh-cn', dest='en')
 
     def set_speaker(self, guess:SpeakerGuess):
         self.original_speaker = guess['label'].capitalize()
@@ -252,7 +292,13 @@ class SubSegment():
 
     def __str__(self):
         return f'[{to_minutes_seconds(self.start)}] {self.speaker_string()}{self.text.strip()}'
-    
+
+def translate(txt:str, src:str=None, dest:str=None) -> str:
+    if src is None: src = 'zh-cn' if contains_chinese(txt) else 'en'
+    if dest is None: dest = 'en' if src == 'zh-cn' else 'zh-cn'
+    result = translator.translate(txt, src=src, dest=dest)
+    return result.text
+
 def get_arguments():
     """
     Sets up the argument parser and grabs the passed in arguments.
@@ -450,7 +496,7 @@ def transcribe(
         compute_type:str=COMPUTE_TYPE, 
         suppress_numerals:bool=True,
         language:str="en",
-        clips: list[tuple[float, float]] = None) -> tuple[TranscriptionType, AudioType]:
+        clips: list[float] = None) -> tuple[TranscriptionType, AudioType]:
 
     """
     Passes the audio to faster_whisper for transcription and then
@@ -462,8 +508,8 @@ def transcribe(
     # that is supposed to make it timestamps better. And, maybe it does??
     # but maybe it slows things WAY down.  Change below from transcribe
     # to transcribe_stable and back to see.
-    #method = TranscribeMethods.STABLE_WHISPER
-    method = TranscribeMethods.STABLE_WHISPER if not clips else TranscribeMethods.FASTER_WHISPER
+    method = TranscribeMethods.STABLE_WHISPER
+    #method = TranscribeMethods.STABLE_WHISPER if not clips else TranscribeMethods.FASTER_WHISPER
 
     prompt_str = \
     "This is a dialog between Tom and Ula. " \
@@ -471,14 +517,13 @@ def transcribe(
     "Ula speaks Mandarin. " \
     "- 你好妈 - Uh... em... Yeah. I'm good. 你呢. " \
     "Produce a verbatim transcription."
-    hotwords = "好大家好"
     ## Things I could maybe tune...
-    ## beam_size
-    ## best_of
-    ## hotwords
-    ## initial_prompt
-    ## vad_filter
-    ## suppress_blank
+    ## hotwords: "好大家好", 
+    ## beam_size: 1,
+    ## best_of: 10
+    ## initial_prompt: prompt_str
+    ## vad_filter: 
+    ## suppress_blank: False
 
     kwargs = {
         'language': language,
@@ -605,8 +650,6 @@ def speaker_for_clip(
     guess = guess_speaker(SubSegment.slice_audio(audio, audio_start, audio_end), classifier)
     if guess == NO_GUESS and previous is not None: guess = previous
 
-    logging.debug(f'"{txt}" said by {guess['label']} at {guess['score']}')
-
     return guess
 
 def _is_episode(episode: str, word: str) -> bool:
@@ -615,11 +658,10 @@ def _is_episode(episode: str, word: str) -> bool:
     return (w == "episode")
 
 def _word_audio_too_short(word: Word) -> bool:
-    return word.end - word.start < TOO_SHORT_TO_GUESS_SECONDS
+    return word.end - word.start < TOO_SHORT_TO_BE_REAL_SECONDS
     
-def _expand_last_seg(subseg:Union[SubSegment,None], last_sub:Union[SubSegment,None], word: Word):
+def _expand_last_seg(subseg:Union[SubSegment,None], word: Word):
     if subseg is not None: subseg.end = word.end
-    elif last_sub is not None: last_sub.end = word.end
 
 def _add_word_to_subseg(yt_id: str, id_base: str, audio: AudioType, subseg:Union[SubSegment, None], sub_id: int, word: Word):
     text = word.word.replace("Yula", "Ula").replace("Eula", "Ula")
@@ -693,11 +735,16 @@ def _clean_up_episode(episode:str) -> str:
 
     return episode
 
-def _should_skip_word(last_sub:Union[SubSegment, None], subseg:Union[SubSegment, None], word: Word) -> bool:
-    if last_sub is None and subseg is None: return False
-    last_text = subseg.text if subseg is not None else last_sub.text
-    if _word_audio_too_short(word) and word.word.strip() == last_text.strip():
-        _expand_last_seg(subseg, last_sub, word)
+def _should_skip_word(subseg:Union[SubSegment, None], word: Word) -> bool:
+    
+    if subseg is None: return False
+    
+    last_text = subseg.text.strip()
+
+    duration = word.end - word.start
+    if (_word_audio_too_short(word) and word.word.strip() == last_text) or \
+        (duration < TOO_SHORT_TO_GUESS_SECONDS and word.probability < MIN_PROBABILITY_TO_INCLUDE):
+        _expand_last_seg(subseg, word)
         return True
     
     return False
@@ -736,7 +783,7 @@ def _split_segment(
 
     for word in segment.words:
 
-        if _should_skip_word(last_sub, subseg, word): continue
+        if _should_skip_word(subseg or last_sub, word): continue
 
         # If we've switched speakers, we're going to break the subsegment
         switched, speaker, guess = _speakers_switched(audio, classifier, word, guess, speaker)
@@ -788,7 +835,8 @@ def get_segments(
         audio:AudioType,
         on_seg:callable=None,
         episode:str="",
-        is_clipped:bool = False) -> tuple[str, list[SubSegment]]:
+        is_clips:bool = False,
+        ignore_shorter_than:float = 0) -> tuple[str, list[SubSegment]]:
 
     model = "./trained-speakerbox"
     classifier: Pipeline = pipeline("audio-classification", model=model, device=DEVICE)
@@ -803,9 +851,15 @@ def get_segments(
 
         if quit_looping: break
 
+        duration = segment.end - segment.start
+        if flat_subs and (duration < ignore_shorter_than or segment.text.strip() in hallucinations):
+            logging.debug(f"IGNORING: {segment.text} ({duration})")
+            flat_subs[-1].end = segment.end
+            continue
+
         subs, potential_episode = _split_segment(
             video_id, audio, segment, flat_subs[-1] if flat_subs else None,
-            classifier=classifier, is_clips=is_clipped
+            classifier=classifier, is_clips=is_clips
         )
         if not episode and potential_episode: episode = potential_episode
 
@@ -952,7 +1006,7 @@ if __name__ == '__main__':
         transcript,
         audio,
         args.episode,
-        is_clipped=(args.clips is not None and args.clips)
+        is_clips=(args.clips is not None and args.clips)
     )
 
     json_path = args.transcript_json
