@@ -12,14 +12,15 @@ from pytubefix import Stream
 
 from transcribe import (
     audio_from_file,
+    contains_chinese,
     get_segments,
     get_youtube_audio,
     save as save_results,
     to_minutes_seconds,
-    transcribe
+    transcribe,
 )
 from transcribe import translate as transcribe_translate
-
+from popups import LoadDialog, SaveDialog, ProgressDialog, TranslateDialog, DefaultButtonsPopup
 from transcribe_events import TranscribeEvents
 from audio_segment import AudioSegment
 
@@ -30,13 +31,11 @@ from kivy.app import App
 from kivy.uix.widget import Widget
 from kivy.uix.gridlayout import GridLayout
 from kivy.uix.boxlayout import BoxLayout
-from kivy.uix.floatlayout import FloatLayout
 from kivy.uix.recycleview.views import RecycleDataViewBehavior
 from kivy.uix.behaviors.focus import FocusBehavior
 from kivy.uix.textinput import TextInput
 from kivy.clock import mainthread
 from kivy.core.window import Window
-from kivy.uix.popup import Popup
 from kivy.clock import Clock
 from kivy.logger import Logger
 from kivy.config import Config
@@ -49,7 +48,7 @@ from kivy.properties import (
         ObjectProperty,
         ObservableList,
         StringProperty
-    )
+)
 
 
 SAMPLING_RATE = 44100
@@ -61,10 +60,12 @@ events = TranscribeEvents()
 class SentenceInput(TextInput):
 
     meta_key_map = {
-        'cursor_left': 'cursor_home',
-        'cursor_right': 'cursor_end',
-        'cursor_up': 'cursor_up',
-        'cursor_down': 'cursor_down',
+        'cursor_home': 'home',
+        'cursor_end': 'end',
+        'cursor_left': 'line_left',
+        'cursor_right': 'line_right',
+        'cursor_up': 'home',
+        'cursor_down': 'end'
     }
 
     def __init__(self, **kwargs):
@@ -72,8 +73,6 @@ class SentenceInput(TextInput):
         super().__init__(**kwargs)
     
     def on_triple_tap(self, *_) -> None:
-        # We're doing this twice.  Once to get it set and
-        # once to get it displayed.
         Clock.schedule_once(lambda x: self.select_all())
     
     def keyboard_on_key_down(self, window, keycode:tuple[int, str], text:str, modifiers: ObservableList):
@@ -84,17 +83,31 @@ class SentenceInput(TextInput):
             or _is_osx and 'meta' in modifiers
         )
         handled = False
+        control='ctrl' in modifiers
+        alt='alt' in modifiers
 
-        if modifiers == {'meta'} and name == 's':
+        if modifiers == {'meta'} and name == '=':
             handled = events.split_join_request(self, 'split')
-        elif modifiers == {'meta'} and name == 'j':
+        elif modifiers == {'meta'} and name == '-':
             handled = events.split_join_request(self, 'join')
         elif events.common_keyboard_events(self, name, is_shortcut, modifiers):
+            handled = True
+        elif control and alt and name == 'left':
+            events.slider_pos_request(self, -1)
+            handled = True
+        elif control and alt and name == 'right':
+            events.slider_pos_request(self, 2)
+            handled = True
+        elif control and alt and name == 'up':
+            events.time_change(self, 0, "start")
+            handled = True
+        elif control and alt and name == 'down':
+            events.time_change(self, 0, "end")
             handled = True
         elif is_shortcut:
             k = SentenceInput.meta_key_map.get(self.interesting_keys.get(key))
             if k:
-                self.do_cursor_movement(k, control={'ctrl'} in modifiers, alt={'alt'} in modifiers)
+                self.do_cursor_movement(k, control=control, alt=alt, meta='meta' in modifiers)
                 handled = True
             elif name == "=":
                 start_end = "end" if 'shift' in modifiers else "start"
@@ -106,7 +119,7 @@ class SentenceInput(TextInput):
                 handled = events.play_stop_request(self)
                 self.burn_space = handled
             elif name == "enter":
-                handled = events.update_request(self)
+                handled = events.update_request(self, advance=False)
         elif modifiers == {'shift'} and name == 'enter':
             handled = events.update_request(self)
         elif modifiers == {'shift'} and name == 'spacebar':
@@ -125,32 +138,45 @@ class SentenceInput(TextInput):
         super().keyboard_on_textinput(window, text)
 
 
-    def do_cursor_movement(self, action, control=False, alt=False):
+    def do_cursor_movement(self, action, control=False, alt=False, meta=False):
 
-        if alt and action == 'cursor_up':
-            events.previous_row_request(self)
-            return True
-        if alt and action == 'cursor_down':
-            events.next_row_request(self)
-            return True
-
-        if not control and not alt:
+        if not control:
             col, row = self.cursor
             handle = False
 
+            if alt and action == 'cursor_up':
+                events.previous_row_request(self)
+                return True
+            if alt and action == 'cursor_down':
+                events.next_row_request(self)
+                return True
             if action == 'cursor_up' and row == 0 and col > 0:
                 col = 0
                 handle = True
             elif action == 'cursor_down' and row == len(self._lines) - 1 and col < len(self._lines[row]):
                 col = len(self._lines[row])
                 handle = True
-            elif action == 'cursor_beginning':
+            elif alt and action == 'cursor_right':
+                if alt: col, row = self._move_cursor_word_right()
+                else: col = len(self._lines[row])
+                handle = True
+            elif alt and action == 'cursor_left':
+                if alt: col, row = self._move_cursor_word_left()
+                else: col = 0
+                handle = True
+            elif action == 'line_left':
+                col = 0
+                handle = True
+            elif action == 'line_right':
+                col = len(self._lines[row])
+                handle = True
+            elif action == 'home':
                 col = 0
                 row = 0
                 handle = True
-            elif action == 'cursor_end':
-                col = len(self._lines[row])
+            elif action == 'end':
                 row = max(0,len(self._lines) - 1)
+                col = len(self._lines[row])
                 handle = True
             
             if handle:
@@ -195,6 +221,8 @@ class TimeEdit(FocusBehavior, BoxLayout):
                 modifiers == {'ctrl'}
                 or _is_osx and modifiers == {'meta'}
             )
+            control = 'ctrl' in modifiers
+            alt = 'alt' in modifiers
             if key == 'left' or key == '-' or key == '_':
                 self.decrease_time()
             elif key == 'right' or key == '=' or key == '+':
@@ -203,6 +231,10 @@ class TimeEdit(FocusBehavior, BoxLayout):
                 events.play_stop_request(self)
             elif key == 'enter':
                 self.request_update()
+            elif control and alt and key == 'up':
+                events.time_change(self, 0, "start")
+            elif control and alt and key == 'down':
+                events.time_change(self, 0, "end")
             elif key == 'up':
                 events.focus_request(self, 'previous_row')
             elif key == 'down':
@@ -240,8 +272,7 @@ class TimeEdit(FocusBehavior, BoxLayout):
     def on_time_value(self, widget, val):
         if self.base_time is None:
             self.base_time = val
-            if self.adjust_slider:
-                self.adjust_slider.value = 0
+            if self.adjust_slider: self.adjust_slider.value = 0
     
         if val is None:
             return
@@ -253,6 +284,10 @@ class TimeEdit(FocusBehavior, BoxLayout):
         if self.adjust_slider is not None:
             offset = max(self.adjust_slider.min, min(val - self.base_time, self.adjust_slider.max))
             self.adjust_slider.value = offset
+
+    def set_time(self, val):
+        if not callable(self.validate) or self.validate(self, val):
+            self.time_value = val
 
     def decrease_time(self, *_):
         time_value = round(self.time_value - self.step, 2) if \
@@ -275,29 +310,6 @@ class TimeEdit(FocusBehavior, BoxLayout):
         val = self.validate
         if not callable(val) or val(self, time_value):
             self.time_value = time_value
-
-class ProgressDialog(FloatLayout):
-    status = ObjectProperty(None)
-    progress = ObjectProperty(None)
-    cancel = ObjectProperty(None)
-
-class TranslateDialog(FloatLayout):
-    chinese = StringProperty(None)
-    english = StringProperty(None)
-    cancel = ObjectProperty(None)
-
-class LoadDialog(FloatLayout):
-    load = ObjectProperty(None)
-    cancel = ObjectProperty(None)
-    path = StringProperty("")
-
-class SaveDialog(FloatLayout):
-    save = ObjectProperty(None)
-    text_input = ObjectProperty(None)
-    cancel = ObjectProperty(None)
-    export = ObjectProperty(None)
-    path = StringProperty("")
-    file = StringProperty("")
 
 class EditRow(GridLayout):
 
@@ -810,7 +822,11 @@ class TranscriptScreen(Widget):
         row, _ = self.current_row(ndx)
         if not row: return
         clips=[editrow.start_time.time_value, editrow.end_time.time_value]
-        self.do_transcribe(audio_file=editrow.audio_file, clips=clips)
+        # admitted hack.  If we've got chinese characters in the current
+        # text, we're going to set the language to chinese.  Otherwise,
+        # we're going with english.
+        lang = "zh" if contains_chinese(editrow.sentence.text) else "en"
+        self.do_transcribe(audio_file=editrow.audio_file, clips=clips, lang=lang, return_focus=editrow.sentence)
 
     def _next_id(self, row, ndx):
         next_row, _ =  self.next_row(ndx)
@@ -864,9 +880,11 @@ class TranscriptScreen(Widget):
         self.edit_row.end_time.base_time = None
         self.edit_row.end_time.time_value = row['modified_end']
 
+        self.transcript_view.refresh_from_data()
+
         def f(_):
             self.transcript_view.layout_manager.focus = True
-            self.scroll_into_view(ndx+1, "down", select_row=ndx+1)
+            #self.scroll_into_view(ndx+1, "down", select_row=ndx+1)
 
         Clock.schedule_once(f)
 
@@ -892,6 +910,8 @@ class TranscriptScreen(Widget):
             row['original_end'] = next_row['original_end']
             self.remove_row(next_ndx)
 
+            self.transcript_view.refresh_from_data()
+    
             def f(*_): self.transcript_view.layout_manager.focus = True
             Clock.schedule_once(f)
 
@@ -1005,7 +1025,7 @@ class TranscriptScreen(Widget):
         self.loaded = True
 
 
-    def transcribe_thread(self, dialog, audio_file, clips):
+    def transcribe_thread(self, dialog, audio_file, clips, lang, return_focus):
 
         def on_progress(stream: Stream, _: bytes, bytes_remaining: int):
             filesize = stream.filesize
@@ -1030,6 +1050,7 @@ class TranscriptScreen(Widget):
             message = yt.title if yt is not None else f'{clips[0]}:{clips[1]}'
             self.update_progress(dialog, text = f'Transcribing {message}', prog=0)
             kwargs = {'clips': clips} if clips else {}
+            if lang is not None: kwargs['language'] = lang
             tscript, audio = transcribe(audio_file, **kwargs)
             self.update_progress(dialog, prog=0)
 
@@ -1081,31 +1102,40 @@ class TranscriptScreen(Widget):
 
         self.cancel_transcribe()
 
+        if return_focus is not None:
+            def f(*_): return_focus.focus = True
+            Clock.schedule_once(f)
+    
     @mainthread
-    def do_transcribe(self, audio_file: Optional[str] = None, clips:Optional[list[float]]=None):
+    def do_transcribe(self, 
+        audio_file: Optional[str] = None,
+        clips:Optional[list[float]]=None,
+        lang:Optional[str]=None, 
+        return_focus:Optional[Widget]=None):
+        
         # if we've got a running transcribe, kill it.
         if not self.stop.is_set():
             self.stop.set()
 
         self.stop.clear()
         content = ProgressDialog(cancel=self.cancel_transcribe)
-        self._popup = Popup(
+        self._popup = DefaultButtonsPopup(
             title=f'Transcribing {self.video_edit.text.strip()}', 
             content=content, size_hint=(0.5, 0.5))
         self._popup.open()
 
-        threading.Thread(target=self.transcribe_thread, args=(content,audio_file,clips)).start()
+        threading.Thread(target=self.transcribe_thread, args=(content,audio_file,clips,lang,return_focus)).start()
 
     def show_translate(self, chinese, english):
         content = TranslateDialog(chinese=chinese,english=english, cancel=self.dismiss_popup)
-        self._popup = Popup(title='Translation', content=content,size_hint=(1,0.8))
+        self._popup = DefaultButtonsPopup(title='Translation', content=content,size_hint=(1,0.8))
         self._popup.open()
 
     def show_load(self):
         p, _ = os.path.split(self.edit_row.json_file)
         p = p or app_path()
         content = LoadDialog(load=self.load, cancel=self.dismiss_popup, path=p)
-        self._popup = Popup(title="Load file", content=content,
+        self._popup = DefaultButtonsPopup(title="Load file", content=content,
                             size_hint=(0.8, 0.8))
         self._popup.open()
 
@@ -1129,7 +1159,10 @@ class TranscriptScreen(Widget):
             Clock.schedule_once(q, .5)
 
         content = SaveDialog(save=self.save, cancel=cancel, path=p, file=f)
-        self._popup = Popup(title="Save file", content=content, size_hint=(0.8, 0.8))
+        self._popup = DefaultButtonsPopup(
+            title="Save file",
+            content=content, size_hint=(0.8, 0.8)
+        )
         self._popup.bind(on_dismiss=restore_focus)
         self._popup.open()
 
@@ -1190,16 +1223,28 @@ class TranscriptScreen(Widget):
             widget = self.edit_row.start_time
         elif widget_name == 'end':
             widget = self.edit_row.end_time
-        
-        if widget and direction > 0:
+        if not widget: return
+
+        if direction > 0:
             widget.increase_time()
-        elif widget and direction < 0:
+        elif direction < 0:
             widget.decrease_time()
+        else:
+            # 0 means use the time of the slider.
+            new_time = float(self.edit_row.time_label.text)
+            widget.set_time(new_time)
 
     def on_slider_pos_request(self, _, requester:Widget, percent: float) -> None:
-        if percent < 0 or percent > 1: return
+
         slider = self.edit_row.slider
-        slider.value = int(slider.max * percent)
+        # percent less than zero means just bump the slider a negative step
+        # percent greater than 1 means just bump the slider a positive step.
+        if percent < 0:
+            slider.value = max(slider.min, slider.value - slider.step)
+        elif percent > 1:
+            slider.value = min(slider.max, slider.value + slider.step)
+        else:
+            slider.value = int(slider.max * percent)
 
     def on_split_join_request(self, _, requester:Widget, split_join: str) -> None:
         if split_join == 'split':
@@ -1252,6 +1297,13 @@ class TranscriptScreen(Widget):
         editrow = self.edit_row
         row = editrow.line
         
+        # The editrow won't update itself if it gets a request
+        # to change it's index and it believes it's dirty - because
+        # that throws away changes.  SO... since this is a request
+        # to capture those changes, we're going to tell it it's 
+        # clean now.
+        editrow.dirty = False
+
         if row['speaker'] != editrow.speaker.text:
             self.dirty = True
             row['speaker'] = editrow.speaker.text
@@ -1296,11 +1348,10 @@ class TranscriptScreen(Widget):
 
         if advance:
             def f(_):
-                lm = self.transcript_view.layout_manager
-                lm.focus = True
                 nr, new_ndx = self.next_row(editrow.active_ndx)
                 if nr:
                     self.scroll_into_view(new_ndx, "down", select_row=new_ndx)
+                requester.focus = True
             func = f
         else:
             def f(*_): requester.focus = True
@@ -1315,7 +1366,7 @@ class TranscriptScreen(Widget):
         return app_path()
     
     def load(self, path, filename):
-        file = os.path.join(path, filename[0])
+        file = os.path.join(path, filename)
         self.load_transcript_from_file(file)
         self.dismiss_popup()
 

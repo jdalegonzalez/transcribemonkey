@@ -54,7 +54,7 @@ class TranscribeEvents(EventDispatcher):
         self.dispatch('on_save_request', requester)
         return True
     
-    def time_change(self, requester: Widget, direction: int, start_end: str) -> bool:
+    def time_change(self, requester: Widget, direction: int,  start_end: str) -> bool:
         self.dispatch('on_time_change', requester, direction, start_end)
         return True
     
@@ -100,6 +100,7 @@ class TranscribeEvents(EventDispatcher):
     def common_keyboard_events(self, requester:Widget, key, is_shortcut, modifiers) -> bool:
         if not is_shortcut:
             return False
+        
         meta = {'meta'} == modifiers
 
         if key.isdigit() and meta:
@@ -115,14 +116,15 @@ class TranscribeEvents(EventDispatcher):
             self.focus_request(requester, 'end_time')
             return True
         if key == 's':
-            self.save_request(requester)
+            if not meta: self.save_request(requester)
+            else: self.update_request(requester, advance=False)
             return True
-        if key == 'home':
+        if key == 'pageup':
             # Set the slider to 0
             self.slider_pos_request(requester, 0)
             self.focus_request(requester, 'start_time')
             return True
-        if key == 'end':
+        if key == 'pagedown':
             # Set the slider to 90% of max
             self.slider_pos_request(requester, .9)
             self.focus_request(requester, 'end_time')

@@ -378,6 +378,7 @@
         SentenceInput:
             id: id_sentence
             text: ''
+            base_direction: 'ltr'
             text_size: self.size
             size_hint: 1, 1
             font_size: 30
@@ -453,25 +454,27 @@
         FileChooserListView:
             id: filechooser
             path: root.path
+            on_selection: root.path, root.file = self.path or "", self.selection and os.path.split(self.selection[0])[1] or ""
         BoxLayout:
             size_hint_y: None
             height: 50
             Button:
                 text: "Cancel"
-                on_release: root.cancel()
+                on_release: root.on_escape()
             Button:
                 text: "Load"
-                on_release: root.load(filechooser.path, filechooser.selection)
+                on_release: root.on_enter()
 
 <SaveDialog>:
     text_input: text_input
+    filechooser: filechooser
     BoxLayout:
         size: root.size
         pos: root.pos
         orientation: "vertical"
         FileChooserListView:
             id: filechooser
-            on_selection: text_input.text = self.selection and self.selection[0] or ''
+            on_selection: root.path, root.file = self.path or "", self.selection and os.path.split(self.selection[0])[1] or ""
             path: root.path
         BoxLayout:
             size_hint_y: None
@@ -484,6 +487,7 @@
                 size_hint_x: 80
                 multiline: False
                 text: root.file
+                on_text: root.file = self.text
         BoxLayout:
             size_hint_y: None
             height: 60
@@ -491,6 +495,7 @@
                 id: export
                 size_hint_x: 10
                 active: root.export
+                on_active: root.export = self.active
             FullLabel:
                 size_hint_x: 90
                 text: "Export audio segments"
@@ -499,10 +504,10 @@
             height: 50
             Button:
                 text: "Cancel"
-                on_release: root.cancel()
+                on_release: root.on_escape()
             Button:
                 text: "Save"
-                on_release: root.save(filechooser.path, text_input.text, export.active, root.cancel)
+                on_release: root.on_enter()
 
 <RecycleSelectableBox@FocusBehavior+LayoutSelectionBehavior+RecycleBoxLayout>:
 

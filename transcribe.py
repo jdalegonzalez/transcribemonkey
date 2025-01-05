@@ -53,7 +53,7 @@ DEVICE = "cpu"
 COMPUTE_TYPE = "int8"
 MODEL_NAME = "large-v3"
 
-MAX_INITIAL_SEGMENT_LENGTH = 15 # in seconds
+MAX_SEGMENT_LENGTH = 60 # in seconds
 SPEAKER_COLLAPSE_CERTAINTY_CUTOFF = .60 # 0 - 1
 SWITCH_SPEAKER_CUTOFF = .70 # 0 - 1
 TOO_SHORT_TO_GUESS_SECONDS = .2
@@ -78,7 +78,10 @@ HF_MODELS = {
 
 hallucinations = [
     "Subtitles by the Amara.org community",
-    "请不吝点赞 订阅 转发 打赏支持明镜与点点栏目"
+    "请不吝点赞 订阅 转发 打赏支持明镜与点点栏目",
+    "请点击订阅点赞。",
+    "优优独播剧场——YoYo Television Series Exclusive",
+    "优独播剧场——YoYo Television Series Exclusive",
 ]
 
 translator = Translator()
@@ -108,14 +111,14 @@ class SegmentDict(TypedDict):
     selected: bool
     export: bool
 
+AudioType = tuple[np.ndarray, float]
+TranscriptionType = tuple[Iterable[Segment], TranscriptionInfo]
+
 def to_minutes_seconds(seconds:float) -> str:
     secs = round(seconds)
     minute_part = secs // 60
     second_part = secs % 60
     return f'{minute_part:02}:{second_part:02}'
-
-AudioType = tuple[np.ndarray, float]
-TranscriptionType = tuple[Iterable[Segment], TranscriptionInfo]
 
 chinese_characters_range = '\u4e00-\u9fff'
 chinese_character_re = re.compile(f'[{chinese_characters_range}]')
@@ -489,6 +492,9 @@ def create_word_doc(filename):
     
     return None
 
+def default_on_seg(text: str, num: int, count: int, percent_complete: float) -> bool:
+    return False
+
 def transcribe(
         audio_file:str, 
         model_name:str=MODEL_NAME,
@@ -496,7 +502,8 @@ def transcribe(
         compute_type:str=COMPUTE_TYPE, 
         suppress_numerals:bool=True,
         language:str="en",
-        clips: list[float] = None) -> tuple[TranscriptionType, AudioType]:
+        on_seg:Optional[callable] = default_on_seg,
+        clips: list[float] = None) -> Union[None, tuple[TranscriptionType, AudioType]]:
 
     """
     Passes the audio to faster_whisper for transcription and then
@@ -504,6 +511,7 @@ def transcribe(
     not necessary since we're using the CPU and not the GPU but
     whatever.  Maybe it will help with big files.
     """
+
     # There is a package called stable-ts, which adds transcribe_stable
     # that is supposed to make it timestamps better. And, maybe it does??
     # but maybe it slows things WAY down.  Change below from transcribe
@@ -557,6 +565,8 @@ def transcribe(
         sr = whisper_model.feature_extractor.sampling_rate
         tokenizer = whisper_model.hf_tokenizer
 
+    if on_seg(f'{model_name} loaded. Using {method}', 0, 0, 0): return None
+
     kwargs['suppress_tokens'] = (
         find_numeral_symbol_tokens(tokenizer)
         if suppress_numerals
@@ -564,8 +574,10 @@ def transcribe(
     )
     
     audio_waveform, _ = audio_from_file(audio_file, sampling_rate=sr)
-
-    logging.info(f'Transcribing audio with duration: {to_minutes_seconds(len(audio_waveform) / sr)}')
+    dur = to_minutes_seconds(len(audio_waveform) / sr)
+    logging.info(f'Transcribing audio with duration: {dur}')
+    
+    if on_seg(f'{audio_file} loaded. Duration: {dur}, sample rate: {sr}', 0, 0, 0): return None
 
     if method == TranscribeMethods.STABLE_WHISPER:
         # O5OjKjno9Pw
@@ -583,6 +595,8 @@ def transcribe(
     # clear gpu vram
     del whisper_model
     torch.cuda.empty_cache()
+    
+    if on_seg(f'Segments loaded. ', 0, 0, 0): return None
 
     return (transcription, (audio_waveform, sr))
 
@@ -617,10 +631,9 @@ def add_subsegment(segments:list[SubSegment], new_segment:SubSegment, collapse_s
 
     # Get the last segment
     check_seg = segments[-1] if segments else None
-    two_minutes = 120
     match = matching_speaker(check_seg, new_segment)
     new_dur = new_segment.end - (check_seg.start if check_seg else new_segment.start)
-    if match is not None and collapse_speaker and new_dur < two_minutes:
+    if match is not None and collapse_speaker and new_dur < MAX_SEGMENT_LENGTH:
         check_seg.speaker = match
         check_seg.end = new_segment.end
         check_seg.text += new_segment.text
@@ -797,15 +810,14 @@ def _split_segment(
         subseg, sub_id = _add_word_to_subseg(yt_id, id_base, audio, subseg, sub_id, word)
         add_to_episode = add_to_episode or _is_episode(episode, word.word)
 
-        # Occasionally, we'll get in a spot where for some reason, we're not given any
-        # punctuation for a LOOONG time.  This makes for very difficult to manage
-        # chucks of text.  So, if adding the word makes the segment longer than a, 
-        # max length, we're just going to stop.  The reconnect bit will put the words back.
-
-        # If this is a series of clips, we're
-        # going to assume each one is a single utterance 
+        # If this is a series of clips, we're going to assume each one is a single utterance 
         # and we shouldn't try any fancy breaking.
-        if not is_clips and (word.word.endswith(punc_tuples) or subseg.duration >= MAX_INITIAL_SEGMENT_LENGTH):
+
+        # But, occasionally, we'll get in a spot where for some reason, we're not given any
+        # punctuation for a LOOONG time.  This makes for very difficult to manage
+        # chucks of text.  So, if adding the word makes the segment longer than a
+        # max length, we're just going to stop.
+        if not is_clips and (word.word.endswith(punc_tuples) or subseg.duration >= MAX_SEGMENT_LENGTH):
             _append_segment(start_segment, result, subseg, last_sub, is_clips)            
             subseg = None
             add_to_episode = False
@@ -833,7 +845,7 @@ def get_segments(
         video_id:str,
         transcript: TranscriptionType,
         audio:AudioType,
-        on_seg:callable=None,
+        on_seg:callable=default_on_seg,
         episode:str="",
         is_clips:bool = False,
         ignore_shorter_than:float = 0) -> tuple[str, list[SubSegment]]:
@@ -866,6 +878,9 @@ def get_segments(
         cnt = 0
         sub_len = len(subs)
         for subseg in subs:
+
+            if quit_looping: break
+
             cnt += 1
 
             ### If there is too little audio in the sample, we're just going to ignore attempting
@@ -897,9 +912,7 @@ def get_segments(
                     sub.finalize()
                     logging.info(sub)
 
-            if on_seg:
-                quit_looping = on_seg(f'Added segment {subseg.id}', cnt, sub_len, subseg.end / duration)
-                if quit_looping: break
+            quit_looping = on_seg(f'Added segment {subseg.id}', cnt, sub_len, subseg.end / (duration if duration else 1))
         
         # [end for subseg in subs]
 
