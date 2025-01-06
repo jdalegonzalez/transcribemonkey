@@ -235,18 +235,10 @@ class TimeEdit(FocusBehavior, BoxLayout):
                 events.time_change(self, 0, "start")
             elif control and alt and key == 'down':
                 events.time_change(self, 0, "end")
-            elif key == 'up':
+            elif alt and key == 'up':
                 events.focus_request(self, 'previous_row')
-            elif key == 'down':
+            elif alt and key == 'down':
                 events.focus_request(self, 'next_row')
-            elif key == 'home':
-                # Set the slider to 0
-                events.slider_pos_request(self, 0)
-                events.focus_request(self, 'start_time')
-            elif key == 'end':
-                # Set the slider to 50% of max
-                events.slider_pos_request(self, .5)
-                events.focus_request(self, 'end_time')
             else:
                 events.common_keyboard_events(self, key, is_shortcut, modifiers)
 

@@ -126,7 +126,7 @@ class TranscribeEvents(EventDispatcher):
             return True
         if key == 'pagedown':
             # Set the slider to 90% of max
-            self.slider_pos_request(requester, .9)
+            self.slider_pos_request(requester, .5)
             self.focus_request(requester, 'end_time')
             return True
         
