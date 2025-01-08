@@ -2,7 +2,7 @@ import os
 from shutil import rmtree
 import glob
 
-from speakerbox.speakerbox import preprocess, train, eval_model
+from speakerbox.speakerbox import preprocess, train, eval_model, DEFAULT_TRAINER_ARGUMENTS_ARGS
 
 os.environ["WANDB_DISABLED"] = "true"
 
@@ -22,7 +22,8 @@ dataset_dict, value_counts = preprocess.prepare_dataset(
 
 # You can print the value_counts dataframe to see how many audio clips of each label
 # (speaker) are present in each data subset.
-
-train(dataset_dict)
+args = dict(DEFAULT_TRAINER_ARGUMENTS_ARGS)
+args["push_to_hub"] = True
+train(dataset_dict, model_name="transcribe-monkey", use_cpu=True, trainer_arguments_kws=args)
 
 eval_model(dataset_dict["valid"])

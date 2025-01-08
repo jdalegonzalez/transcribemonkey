@@ -60,6 +60,9 @@ TOO_SHORT_TO_GUESS_SECONDS = .2
 TOO_SHORT_TO_BE_REAL_SECONDS = .1
 MIN_PROBABILITY_TO_INCLUDE = .4
 
+# punctuation:str="\"'.。,，!！?？:：”)]}、"
+DEFAULT_PUNCTUATION = "\"'.。!！?？:：”)]}、" # no comma
+
 NO_GUESS = {'label': "", 'score': 0}
 HF_MODELS = {
     "tiny.en": "openai/whisper-tiny.en",
@@ -76,12 +79,19 @@ HF_MODELS = {
     "large": "openai/whisper-large-v3"
 }
 
+# These are intentionally repetitive because I'm
+# trying to make sure I don't kill something by
+# accident so I want long, specific strings.
+# Maybe later I'll look at patters for some of
+# them.
 hallucinations = [
     "Subtitles by the Amara.org community",
     "请不吝点赞 订阅 转发 打赏支持明镜与点点栏目",
     "请点击订阅点赞。",
+    "曲 李宗盛嗯。 ",
     "优优独播剧场——YoYo Television Series Exclusive",
     "优独播剧场——YoYo Television Series Exclusive",
+    "场——YoYo Television Series Exclusive",
 ]
 
 translator = Translator()
@@ -124,6 +134,27 @@ chinese_characters_range = '\u4e00-\u9fff'
 chinese_character_re = re.compile(f'[{chinese_characters_range}]')
 def contains_chinese(text:str) -> bool:
     return chinese_character_re.search(text) is not None
+
+
+# anomalous words are very long/short/improbable
+def word_anomaly_score(word: Word) -> float:
+    probability = word.probability
+    duration = word.end - word.start
+    score = 0.0
+    if probability < 0.15:
+        score += 1.0
+    if duration < 0.133:
+        score += (0.133 - duration) * 15
+    if duration > 2.0:
+        score += duration - 2.0
+    return score
+
+def is_segment_anomaly(segment: Segment) -> bool:
+    if segment is None or not segment.words: return False
+    words = [w for w in segment.words if w.word.strip() and w.word not in DEFAULT_PUNCTUATION + ","]
+    words = words[:8]
+    score = sum(word_anomaly_score(w) for w in words)
+    return score >= 3 or score + 0.01 >= len(words)
 
 class SubSegment():
     """
@@ -678,6 +709,9 @@ def _expand_last_seg(subseg:Union[SubSegment,None], word: Word):
 
 def _add_word_to_subseg(yt_id: str, id_base: str, audio: AudioType, subseg:Union[SubSegment, None], sub_id: int, word: Word):
     text = word.word.replace("Yula", "Ula").replace("Eula", "Ula")
+    ### DEBUG
+    print("WORD", word.word, "score", word_anomaly_score(word))
+    ### END DEBUG
     if subseg is None:
         sub_id += 1
         subseg = SubSegment(
@@ -770,13 +804,12 @@ def _speakers_switched(audio:AudioType, classifier:Pipeline, word:Word, guess:Sp
     switched = speaker and speaker != prev_speaker
     return (switched, speaker, guess)
 
-# punctuation:str="\"'.。,，!！?？:：”)]}、"
 def _split_segment(
         yt_id: str,
         audio: AudioType, 
         segment: Segment, 
         last_sub: Optional[SubSegment],
-        punctuation:str="\"'.。!！?？:：”)]}、",
+        punctuation:str=DEFAULT_PUNCTUATION,
         classifier:Optional[Pipeline] = None,
         is_clips: bool = False
     ) -> tuple[list[SubSegment], str, str]:
@@ -817,12 +850,21 @@ def _split_segment(
         # punctuation for a LOOONG time.  This makes for very difficult to manage
         # chucks of text.  So, if adding the word makes the segment longer than a
         # max length, we're just going to stop.
-        if not is_clips and (word.word.endswith(punc_tuples) or subseg.duration >= MAX_SEGMENT_LENGTH):
+        if word.word.strip().endswith(punc_tuples) or subseg.duration >= MAX_SEGMENT_LENGTH:
             _append_segment(start_segment, result, subseg, last_sub, is_clips)            
             subseg = None
             add_to_episode = False
 
     # [end for word in segment.words]
+
+    ### DEBUG
+    print("BEGIN TRAILING...")
+    if result:
+        seg = result[-1]
+        print("Last subseg dur", seg.end - seg.start, "Words", word_count(seg.text, punctuation + ","))
+        print(list(segment.words)[-1], "is anomaly?", is_segment_anomaly(segment))
+    print("END TRAILING...")
+    ### END DEBUG
 
     # If we've got a leftover subseg, we'll add it now.
     if subseg:
@@ -841,12 +883,17 @@ def guess_speaker(audio: AudioType, classifier: Pipeline) -> SpeakerGuess:
     if len(raw) < (sr * TOO_SHORT_TO_GUESS_SECONDS): return NO_GUESS
     return classifier({"sampling_rate": sr, "raw": raw}, top_k=1)[0]
 
+def word_count(txt:str, punc=string.punctuation) -> int:
+    trans = str.maketrans(str.maketrans('','',punc))
+    words = [ w for w in jieba.lcut(txt.replace("'","")) if len(w.strip().translate(trans)) ]
+    return len(words)
+
 def get_segments(
         video_id:str,
         transcript: TranscriptionType,
         audio:AudioType,
-        on_seg:callable=default_on_seg,
         episode:str="",
+        on_seg:callable=default_on_seg,
         is_clips:bool = False,
         ignore_shorter_than:float = 0) -> tuple[str, list[SubSegment]]:
 
@@ -897,10 +944,12 @@ def get_segments(
             # We're deciding that "pretty sure" is the SPEAKER_COLLAPSE_CERTAINTY_CUTOFF
             # Also, there is a special case that happens when a sentence is VERY short.
             # Usually the speaker detector doesn't do a good job.
-            # We also know that this sub ends in a stop character and our splitter sees
-            # a stop character as a word.  So, "one word" is a length < 3 (1, or 2)
+            is_one_word = word_count(subseg.text, DEFAULT_PUNCTUATION + ",") < 2
 
-            is_one_word = len(jieba.lcut(subseg.text)) < 3
+            ## BEGIN DEBUG...
+            if is_one_word: print(f'Found one word: "{subseg.text.strip()}"')
+            ## END DEBUG...
+
             if not is_one_word and subseg.speaker_confidence < SPEAKER_COLLAPSE_CERTAINTY_CUTOFF:
                 subseg.speaker = ""
 
@@ -1018,7 +1067,7 @@ if __name__ == '__main__':
         args.video_id,
         transcript,
         audio,
-        args.episode,
+        episode=args.episode,
         is_clips=(args.clips is not None and args.clips)
     )
 

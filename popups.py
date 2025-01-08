@@ -1,6 +1,7 @@
 from kivy.uix.floatlayout import FloatLayout
 from kivy.uix.popup import Popup
-from kivy.clock import Clock
+from kivy.uix.behaviors.focus import FocusBehavior
+
 from kivy.properties import (
         BooleanProperty,
         ObjectProperty,
@@ -48,13 +49,14 @@ class SaveDialog(FloatLayout):
 
 ENTER_KEY = 13
 ESCAPE_KEY = 27
-class DefaultButtonsPopup(Popup):
+class DefaultButtonsPopup(FocusBehavior, Popup):
 
     def __init__(self, **kwargs):
         on_enter = getattr(kwargs['content'], "on_enter", None)
         on_escape = getattr(kwargs['content'], "on_escape", None)
         self._on_enter = on_enter if callable(on_enter) else None
         self._on_escape = on_escape if callable(on_escape) else None
+        self.focus = True
         super().__init__(**kwargs)
 
     def _handle_keyboard(self, _window, key, *_args):

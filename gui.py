@@ -62,8 +62,8 @@ class SentenceInput(TextInput):
     meta_key_map = {
         'cursor_home': 'home',
         'cursor_end': 'end',
-        'cursor_left': 'line_left',
-        'cursor_right': 'line_right',
+        'cursor_left': 'cursor_home',
+        'cursor_right': 'cursor_end',
         'cursor_up': 'home',
         'cursor_down': 'end'
     }
@@ -104,6 +104,12 @@ class SentenceInput(TextInput):
         elif control and alt and name == 'down':
             events.time_change(self, 0, "end")
             handled = True
+        elif control and alt and name == 'home':
+            events.slider_pos_request(self, 0)
+            handled = True
+        elif control and alt and name == 'end':
+            events.slider_pos_request(self, .8)
+            handled = True
         elif is_shortcut:
             k = SentenceInput.meta_key_map.get(self.interesting_keys.get(key))
             if k:
@@ -138,6 +144,13 @@ class SentenceInput(TextInput):
         super().keyboard_on_textinput(window, text)
 
 
+    def _handle_selection(self):
+        if self._selection and not self._selection_finished:
+            self._selection_to = self.cursor_index()
+            self._update_selection()
+        else:
+            self.cancel_selection()
+
     def do_cursor_movement(self, action, control=False, alt=False, meta=False):
 
         if not control:
@@ -164,10 +177,10 @@ class SentenceInput(TextInput):
                 if alt: col, row = self._move_cursor_word_left()
                 else: col = 0
                 handle = True
-            elif action == 'line_left':
+            elif action == 'cursor_home':
                 col = 0
                 handle = True
-            elif action == 'line_right':
+            elif action == 'cursor_end':
                 col = len(self._lines[row])
                 handle = True
             elif action == 'home':
@@ -181,6 +194,7 @@ class SentenceInput(TextInput):
             
             if handle:
                 self.cursor = col, row
+                self._handle_selection()                
                 return True
             
         return super().do_cursor_movement(action, control, alt)
@@ -237,7 +251,7 @@ class TimeEdit(FocusBehavior, BoxLayout):
                 events.time_change(self, 0, "end")
             elif alt and key == 'up':
                 events.focus_request(self, 'previous_row')
-            elif alt and key == 'down':
+            elif alt and  key == 'down':
                 events.focus_request(self, 'next_row')
             else:
                 events.common_keyboard_events(self, key, is_shortcut, modifiers)
@@ -429,11 +443,13 @@ class EditRow(GridLayout):
             return
 
         self.speaker.disabled = False
-        self.dirty = False
+        self.dirty = False if self.active_ndx != ndx else self.dirty
+
+        slider_restore = self.restore_slider if ndx == self.active_ndx else 0
+        slider_value = self.slider.value if ndx == self.active_ndx else 0
+
 
         if ndx != self.active_ndx:
-            self.restore_slider = 0
-            self.slider.value = 0
             self.active_ndx = ndx
             self.line = line
 
@@ -450,6 +466,12 @@ class EditRow(GridLayout):
 
         if self.sentence.text != line['text']:
             self.sentence.text = line['text']
+
+        def f(*_):
+            self.restore_slider = slider_restore
+            self.slider.value = slider_value
+
+        Clock.schedule_once(f)
 
     def save_focus(self):
         if self.start_time.focus:
@@ -479,7 +501,7 @@ class EditRow(GridLayout):
             # Start time can't be less than 0 or more than the end time.
             result = time_value >= 0 and (self.end_time.time_value is None or time_value < self.end_time.time_value)
             # If you're messing with the start time, lets reset the slider to 0
-            if result:
+            if result and (time_value < self.start_time.time_value) or self.start_time.focus:
                 self.slider.value = 0
         else:
             # End time can't be more than the total length of the audio or less the start_value
@@ -1060,8 +1082,8 @@ class TranscriptScreen(Widget):
                 vid, 
                 tscript, 
                 audio, 
-                on_seg=on_segment, 
                 episode=episode, 
+                on_seg=on_segment, 
                 is_clips=is_clips,
                 ignore_shorter_than=ignore
             )
@@ -1225,6 +1247,8 @@ class TranscriptScreen(Widget):
             # 0 means use the time of the slider.
             new_time = float(self.edit_row.time_label.text)
             widget.set_time(new_time)
+            self.edit_row.slider.value = .5 if widget_name == "end" else 0
+            self.edit_row.restore_slider = self.edit_row.slider.value
 
     def on_slider_pos_request(self, _, requester:Widget, percent: float) -> None:
 
@@ -1241,7 +1265,9 @@ class TranscriptScreen(Widget):
     def on_split_join_request(self, _, requester:Widget, split_join: str) -> None:
         if split_join == 'split':
             self.split_row()
+            self.edit_row.slider.value = 0
         elif split_join == 'join':
+            self.edit_row.slider.value = .8
             self.join_row()
 
     def on_next_row_request(self, _, requester:Widget) -> None:
@@ -1418,15 +1444,27 @@ def get_arguments():
         description="Creates a transcription of a Youtube video"
     )
     parser.add_argument(
-        "-v", "--video", 
-        help="The Youtube ID for the video to be transcribed",
-        dest='video_id',
-        default=None
+        '-l', '--log_level',
+        help="The python logging level for output.  Currently unused.  Here for compatibility with ./transcribe.py",
+        dest='log_level',
+        default="WARNING"
+    )
+    parser.add_argument(
+        "-o", "--out",
+        help="The path output audio file.  The default is ./<youtube_id>.mp4.  Currently unused.  Here for compatibility with ./transcribe.py",
+        dest="filename",
+        default=""
     )
     parser.add_argument(
         "-t", "--transcript", 
         help="The path to a saved transcript to load when the app loads",
         dest='transcript_json',
+    )
+    parser.add_argument(
+        "-v", "--video", 
+        help="The Youtube ID for the video to be transcribed",
+        dest='video_id',
+        default=None
     )
     args = parser.parse_args()
     if os.path.isdir(args.transcript_json) and args.video_id is not None:
