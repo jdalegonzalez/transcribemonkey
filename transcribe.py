@@ -85,6 +85,7 @@ HF_MODELS = {
 # Maybe later I'll look at patters for some of
 # them.
 hallucinations = [
+    "Subtitles by the Amara.org community you."
     "Subtitles by the Amara.org community",
     "请不吝点赞 订阅 转发 打赏支持明镜与点点栏目",
     "请点击订阅点赞。",
