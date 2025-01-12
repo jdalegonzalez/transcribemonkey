@@ -93,6 +93,7 @@ hallucinations = [
     "优优独播剧场——YoYo Television Series Exclusive",
     "优独播剧场——YoYo Television Series Exclusive",
     "场——YoYo Television Series Exclusive",
+    "ING PAO CANADAING PAO TORONTO",
 ]
 
 translator = Translator()
@@ -557,8 +558,8 @@ def transcribe(
     "Ula speaks Mandarin. " \
     "- 你好妈 - Uh... em... Yeah. I'm good. 你呢. " \
     "Produce a verbatim transcription."
+    hot_words = "Ula Mandarin Monkey"
     ## Things I could maybe tune...
-    ## hotwords: "好大家好", 
     ## beam_size: 1,
     ## best_of: 10
     ## initial_prompt: prompt_str
@@ -570,6 +571,7 @@ def transcribe(
         'without_timestamps': True,
         'word_timestamps': True,
         'initial_prompt': prompt_str,
+        'hotwords': hot_words,
         'beam_size': 1,
         'best_of': 10,
         'suppress_blank': False
@@ -742,6 +744,8 @@ def _append_segment(start_seg:SubSegment, segments:list[SubSegment], seg_to_appe
         # - If the text is identical and the duration is less than a second,
         #   just bump the last guy and drop the segment.
 
+        # TODO: This is where I think anamoly checking and potentially dumping
+        # an hallucination should go
         prev_subseg = segments[-1] if segments else last_segment
         trunky = 100
         if (prev_subseg and
@@ -860,8 +864,8 @@ def _split_segment(
 
     ### DEBUG
     print("BEGIN TRAILING...")
-    if result:
-        seg = result[-1]
+    if result or subseg:
+        seg = result[-1] if result else subseg
         print("Last subseg dur", seg.end - seg.start, "Words", word_count(seg.text, punctuation + ","))
         print(list(segment.words)[-1], "is anomaly?", is_segment_anomaly(segment))
     print("END TRAILING...")
