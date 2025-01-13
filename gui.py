@@ -1403,7 +1403,7 @@ class TranscriptScreen(Widget):
             self.episode_edit.text.strip(),
             self.video_edit.text.strip(),
             self.edit_row.audio_file,
-            str(os.path.join(path, "audio_samples")),
+            str(path),
             json_file,
             True,
             export,

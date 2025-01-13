@@ -1,15 +1,17 @@
+#! python
 import os
 from shutil import rmtree
 import glob
 
-from speakerbox.speakerbox import preprocess, train, eval_model, DEFAULT_TRAINER_ARGUMENTS_ARGS
+from speakerbox.speakerbox import preprocess, train, eval_model
+from speakerbox.speakerbox.main import DEFAULT_TRAINER_ARGUMENTS_ARGS
 
 os.environ["WANDB_DISABLED"] = "true"
 
 # Need to clean up anything left-over from the last run...
 rmtree('./chunked-audio')
 dataset = preprocess.expand_labeled_diarized_audio_dir_to_dataset(
-    labeled_diarized_audio_dir=glob.glob("audio_samples/*")
+    labeled_diarized_audio_dir=glob.glob("transcripts/audio_samples/*")
 )
 
 dataset_dict, value_counts = preprocess.prepare_dataset(
@@ -24,6 +26,7 @@ dataset_dict, value_counts = preprocess.prepare_dataset(
 # (speaker) are present in each data subset.
 args = dict(DEFAULT_TRAINER_ARGUMENTS_ARGS)
 args["push_to_hub"] = True
-train(dataset_dict, model_name="transcribe-monkey", use_cpu=True, trainer_arguments_kws=args)
+model_name = "transcribe-monkey"
 
-eval_model(dataset_dict["valid"])
+train(dataset_dict, model_name=model_name, use_cpu=True, trainer_arguments_kws=args)
+eval_model(dataset_dict["valid"], model_name=model_name)

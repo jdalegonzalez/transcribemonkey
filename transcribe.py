@@ -172,10 +172,10 @@ class SubSegment():
         yt_id: str,
         id: str,
         start: float,
-        end: float,
-        text: str,
         audio: AudioType,
-        speaker: Optional[str] = None,
+        end: Optional[float] = None,
+        text: Optional[str] = "",
+        speaker: Optional[str] = "",
         speaker_confidence: Optional[float] = None,
         selectable: Optional[bool] = True,
         selected: Optional[bool] = False,
@@ -184,7 +184,7 @@ class SubSegment():
         self.yt_id: str = yt_id
         self.id: str = id
         self._start: float = float(start)
-        self._end: float = float(end)
+        self._end: float = float(end) if end is not None else self._start
         self.text: str = text
         self.pinyin: str = ''
         self.translation: str = ''
@@ -195,15 +195,13 @@ class SubSegment():
         self.selectable = selectable
         self.selected = selected
         self.export = export
+        self._anomaly_score = 0
 
     def start_segment(yt_id: str, audio: AudioType):
         return SubSegment(
             yt_id=yt_id,
             id='0.0', 
             start=0,
-            end=0,
-            text="",
-            speaker="",
             audio=audio
         )
     
@@ -224,6 +222,20 @@ class SubSegment():
     @property
     def duration(self):
         return self._end - self._start
+
+    def add_word(self, word:Word) -> None:
+        score = word_anomaly_score(word)
+        text=word.word.replace("Yula", "Ula").replace("Eula", "Ula")
+        self.text += text
+        self.end = word.end
+        self._anomaly_score += score    
+        ### DEBUG
+        print("WORD", word.word, "score", score)
+        ### END DEBUG
+
+    def is_anomaly(self, punc = DEFAULT_PUNCTUATION + ",") -> bool:
+        num_words = word_count(self.text, punc=punc)
+        return self._anomaly_score >= 3 or self._anomaly_score + 0.01 >= num_words
 
     def from_segment(yt_id: str, audio: AudioType, seg:Segment, is_clips:bool=False):
         ret = SubSegment(
@@ -711,23 +723,15 @@ def _expand_last_seg(subseg:Union[SubSegment,None], word: Word):
     if subseg is not None: subseg.end = word.end
 
 def _add_word_to_subseg(yt_id: str, id_base: str, audio: AudioType, subseg:Union[SubSegment, None], sub_id: int, word: Word):
-    text = word.word.replace("Yula", "Ula").replace("Eula", "Ula")
-    ### DEBUG
-    print("WORD", word.word, "score", word_anomaly_score(word))
-    ### END DEBUG
     if subseg is None:
         sub_id += 1
         subseg = SubSegment(
             yt_id=yt_id,
             id=f'{id_base}.{sub_id}', 
             start=word.start,
-            end=word.end,
-            text=text,
             audio=audio
-        )
-    else:
-        subseg.text += text
-        subseg.end = word.end
+    )
+    subseg.add_word(word)
 
     return (subseg, sub_id)
     
@@ -745,7 +749,17 @@ def _append_segment(start_seg:SubSegment, segments:list[SubSegment], seg_to_appe
         #   just bump the last guy and drop the segment.
 
         # TODO: This is where I think anamoly checking and potentially dumping
-        # an hallucination should go
+        # a hallucination should go
+
+        ### DEBUG
+        print("BEGIN HALLUC...")
+        if seg_to_append:
+            print("Last subseg dur", seg_to_append.end - seg_to_append.start, "Words", word_count(seg_to_append.text))
+            print(seg_to_append.text, "is anomaly?", seg_to_append.is_anomaly())
+        print("END HALLUC...")
+        ### END DEBUG
+
+
         prev_subseg = segments[-1] if segments else last_segment
         trunky = 100
         if (prev_subseg and
@@ -862,15 +876,6 @@ def _split_segment(
 
     # [end for word in segment.words]
 
-    ### DEBUG
-    print("BEGIN TRAILING...")
-    if result or subseg:
-        seg = result[-1] if result else subseg
-        print("Last subseg dur", seg.end - seg.start, "Words", word_count(seg.text, punctuation + ","))
-        print(list(segment.words)[-1], "is anomaly?", is_segment_anomaly(segment))
-    print("END TRAILING...")
-    ### END DEBUG
-
     # If we've got a leftover subseg, we'll add it now.
     if subseg:
         _append_segment(start_segment, result, subseg, last_sub, is_clips)
@@ -888,7 +893,7 @@ def guess_speaker(audio: AudioType, classifier: Pipeline) -> SpeakerGuess:
     if len(raw) < (sr * TOO_SHORT_TO_GUESS_SECONDS): return NO_GUESS
     return classifier({"sampling_rate": sr, "raw": raw}, top_k=1)[0]
 
-def word_count(txt:str, punc=string.punctuation) -> int:
+def word_count(txt:str, punc=DEFAULT_PUNCTUATION + ",") -> int:
     trans = str.maketrans(str.maketrans('','',punc))
     words = [ w for w in jieba.lcut(txt.replace("'","")) if len(w.strip().translate(trans)) ]
     return len(words)
@@ -1029,7 +1034,7 @@ def save(
             values.pop('size', None)
             seen_selected = bool(seen_selected or values['selected'])
             transcript["transcription"].append(values)
-            if save_audio and values['export']:
+            if save_audio and values['export'] and values['speaker'] is not None and values['speaker'].strip() :
                 segment_file = SubSegment.static_file_dest(vid, values['row_id'], path=dest(values['speaker']))
                 SubSegment.save_audio_slice(segment_file, audio, values['modified_start'], values['modified_end'])
 

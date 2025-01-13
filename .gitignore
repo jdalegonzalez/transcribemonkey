@@ -17,6 +17,7 @@ __pycache__
 # model but don't want to store the MASSIVE safe-tensor
 # in git
 trained-speakerbox/**
+transcribe-monkey/**
 transcripts/*.json
 transcripts/*.json.*
 transcripts/*.bak
