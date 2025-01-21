@@ -1,0 +1,733 @@
+Building prefix dict from the default dictionary ...
+Loading model from cache /var/folders/_3/j1mz98552fs53597hlvzd8mm0000gq/T/jieba.cache
+Loading model cost 0.369 seconds.
+Prefix dict has been built successfully.
+INFO:root:Audio saved as filename /Users/dgonzalez/projects/transcribemonkey/audio_out/Od70LvITJPk_audio.mp4
+INFO:root:Transcribing: "U.S. vs. TikTok: The Ban, The Drama & What’s Next! (English & Mandarin)"
+OMP: Info #276: omp_set_nested routine deprecated, please use omp_set_max_active_levels instead.
+Device set to use cpu
+INFO:root:Detected episode: 387
+INFO:root:[00:00] <Intro Music>
+INFO:root:[00:09] Ula (1.0000): 哈喽大家好 , 欢迎来到 Monkey  广播时间。 Why
+INFO:root:[00:13] Tom (0.9999): hello there and welcome back to the Mandarin Monkey podcast episode 387.
+INFO:root:[00:18] Ula (1.0000): 第 387 集。
+INFO:root:[00:20] Tom (0.9999): 对呀 , 今天是星期五。
+INFO:root:[00:22] Ula (0.6023): 星期五快乐。
+INFO:root:[00:23] Tom (1.0000): 对呀 , 你要介绍吗 ?  介绍。  大家好
+INFO:root:[00:27] Ula (1.0000): , 我是 Ula 。
+INFO:root:[00:28] Tom (0.9999): And I am Tom.  但是我的工作是英文老师。  人
+INFO:root:[00:38] Ula (0.9999): How
+INFO:root:[00:38] Tom (0.9997): would you say it? I'm an Englishman.
+INFO:root:[00:41] Ula (0.9905): 你是英国人。
+INFO:root:[00:42] Tom (1.0000): 你是我的工作。  你说英文。 Yeah, I'm just, yeah,  我说英文。 That's what, what job is that? It's not really a job, is it?
+INFO:root:[00:50] Ula (1.0000): 你就是英文的主持人。
+INFO:root:[00:52] Tom (1.0000): 主持人 , it's like a host, yeah.
+INFO:root:[00:55] Ula (0.9995): 我是中文主持人。
+INFO:root:[00:57] Tom (1.0000): Yeah, yeah, yeah. And that's the kind of the point. So you're going to speak Mandarin throughout, so you get the input you need. I'm going to speak English most of the time. Sometimes,  有时候我会 switch, language to Zhonghuan. And just to weigh some up, we got contacted. Well, actually, first of all,
+INFO:root:[01:14] Ula (0.9983): first
+INFO:root:[01:14] Tom (1.0000): of all, what I want to say is obviously we used to a long time ago, many moons ago.
+INFO:root:[01:22] Tom (1.0000): If you've been following Our Mother Guangbo, our podcast for a while, you'll remember that whenever we got a new patron, we'd say, hey, thanks.
+INFO:root:[01:30] Ula (1.0000): And
+INFO:root:[01:30] Tom (1.0000): what happened was we sort of changed the model. Yeah. up because it's an option for like for learnings, for example. So if you want to sign up as a subscription, we work through Patreon. So you sign up to Patreon and then Ula gets in touch or a teacher gets in touch. You pick your lessons and we give you access to this dashboard. It's got loads of stuff on it and you can sort of book your lessons
+INFO:root:[02:20] Ula (0.9999): via
+INFO:root:[02:21] Tom (1.0000): subscription instead of having to remember to pay every time you want to do it one by one. So some people just to support and some people pay for lessons away. But anyway, welcome, welcome Ben. Welcome back. Terry, thank you so much for the support. Who else? Keith, thank you so much for the support also and for taking charge and... Yeah, like diving headfirst into lessons. Tommy, appreciate you. Hang out here, I think. Sasha as well.
+INFO:root:[02:53] Ula (0.9997): Yeah, but you know,
+INFO:root:[02:58] Tom (1.0000): upping the pressure as well. Emma as well. appreciate you and thank you so much for joining. Also, is it recent? Uh, uh, Colleen?
+INFO:root:[03:11] Ula (0.9968): Colleen.
+INFO:root:[03:12] Tom (0.9999): Yeah. Uh, let me just double check something. How? Uh, uh, uh, Colleen. I think it's Colleen. Yeah. Colleen. Uh, uh, thank you so much for the email. Um, also sort of, you know, just saying that you're going to, you're stepping up and making a commitment to learning Jongwon, which is a, uh,
+INFO:root:[03:32] Ula (1.0000): which
+INFO:root:[03:32] Tom (1.0000): is a, uh, fantastic thing to do. And it's what we should really be doing. Well, not you, because you know, you know, you know, Mandarin quite well, don't you? But we, me as well, need to make, I'm pledging myself to recommit to Zhongwen this year. And now I'm slightly more stable in my job, if I can call it that. Yeah, yeah, yeah. I'm going to like recommit. But Colleen as well, thank you very much. And actually,  而且 Kelene one of our  你可以的帽子。
+INFO:root:[04:05] Ula (0.9999): 帽子。 Which
+INFO:root:[04:08] Tom (1.0000): is amazing, because this is  你可以的 as well.
+INFO:root:[04:10] Ula (0.9987): 我们有帽子。
+INFO:root:[04:11] Tom (1.0000): 我们有啊。 Yeah, I have one.
+INFO:root:[04:16] Ula (1.0000): 那我们说我们有帽 T, 我们也有帽子
+INFO:root:[04:18] Tom (0.9927): , 还有毛帽。 Like a beanie hat.  但是那个毛帽不是你可以的的。 This one is. This one's got  你可以的 on the back.
+INFO:root:[04:31] Ula (0.9992): 有吧 ?  我们有一个你可以的 ,maybe in pinyin.
+INFO:root:[04:35] Tom (0.6543): 对不对 ? Where is it?
+INFO:root:[04:38] Ula (1.0000): 在我们的商店里啊。
+INFO:root:[04:41] Tom (1.0000): Is it?
+INFO:root:[04:41] Ula (1.0000): Yeah, in your store.
+INFO:root:[04:43] Tom (1.0000): Oh no, I know we sell it. I thought we have one. Oh, 没有没有没有。 ask personally.
+INFO:root:[04:47] Ula (0.9998): I
+INFO:root:[04:48] Tom (0.9999): have one of these.
+INFO:root:[04:48] Ula (1.0000): Yeah.
+INFO:root:[04:49] Tom (1.0000): Which by the way, we bought off ourselves. Right? And just explain by the way, how that works.  我需要这次。
+INFO:root:[04:56] Ula (1.0000): 好。
+INFO:root:[04:57] Tom (1.0000): 你想 ,oh, you can buy off yourself.  没事 , 他们会给你钱。 No, no, no.
+INFO:root:[05:04] Ula (0.9861): 为什么他们会给你钱 ?
+INFO:root:[05:07] Tom (1.0000): Well, so you buy them off your own store.  对啊。 Yeah, and they obviously, the people who make it get the margin by far. We don't get charged the cost it cost them to make it. We get charged the cost it cost them to make it plus their margin.
+INFO:root:[05:22] Ula (1.0000): 对啊 , 对啊 ,full price. Basically.
+INFO:root:[05:26] Tom (0.9949): 只是我们付的钱跟我们的客人付的钱是一样的。 Yeah, yeah, yeah.
+INFO:root:[05:29] Ula (0.9997): 对 , 对 , 对。
+INFO:root:[05:30] Tom (1.0000): So like, you know, if a hat's like $20 or something, they get like $17.
+INFO:root:[05:35] Ula (1.0000): Because
+INFO:root:[05:36] Tom (1.0000): they're making the thing. So you have to... It's not like they can just send you one for free.
+INFO:root:[05:41] Ula (0.9949): We buy this off
+INFO:root:[05:43] Tom (1.0000): ourselves, but not like... It's not free.
+INFO:root:[05:46] Tom (0.9999): Do you know what this should be? I think before we talked about it, it should be...  我可以的。
+INFO:root:[05:54] Ula (1.0000): 对 , 我记得 , 因为我们要换嘛 , 对不对 ?
+INFO:root:[05:57] Tom (1.0000): I'll make one.
+INFO:root:[05:58] Ula (1.0000): 我们会换
+INFO:root:[05:59] Tom (0.9999): , 我们会换。
+INFO:root:[06:01] Ula (1.0000): 我觉得我很喜欢。 Even  我没有在工作的时候 , 我也很喜欢穿这个帽 T 。  就是它很舒服。  它的品质很好
+INFO:root:[06:12] Tom (0.9997): , 我觉得。 The material. Yeah, I agree. Although it's looking a bit old now. I'm looking at the letters.
+INFO:root:[06:18] Ula (1.0000): 对啊 , 已经 fading away.
+INFO:root:[06:20] Tom (0.9223): 我们穿好久哦。
+INFO:root:[06:21] Ula (0.6298): 五年 ?  我们在台湾的时候就有了。
+INFO:root:[06:26] Tom (1.0000): Well, we've been here three years. It must
+INFO:root:[06:27] Ula (0.9889): be
+INFO:root:[06:27] Tom (1.0000): maybe more than five years.
+INFO:root:[06:29] Ula (1.0000): Yeah,
+INFO:root:[06:30] Tom (1.0000): but it's been watched that many times because the letters are starting to crack a little bit. I
+INFO:root:[06:35] Ula (1.0000): really like his... This is from an American company.
+INFO:root:[06:39] Tom (1.0000): No, European. Oh, from an European country. Well, I think there is a base in America. They have like a printers in America and they have a base in... Europe. Lithuania or something, I'm not sure. Somewhere in Europe. But depends on where you live. That's where they send it from.
+INFO:root:[06:59] Ula (0.9999): 很舒服 , 我很喜欢。
+INFO:root:[07:00] Tom (1.0000): It is nice.
+INFO:root:[07:01] Ula (0.9931): It
+INFO:root:[07:01] Tom (1.0000): sounds like an advert though, doesn't it?
+INFO:root:[07:03] Ula (1.0000): 可是是真的啊 ,this is true.  你知道很多衣服就是那种品质就是很不好
+INFO:root:[07:09] Tom (0.8073): , 很便宜。
+INFO:root:[07:10] Ula (0.9999): 但是我们的衣服的品质真的很好。  我很喜欢。
+INFO:root:[07:14] Tom (1.0000): Now, in other news, I want to say. What I want to do is a really, that was a  关波的错。
+INFO:root:[07:24] Ula (0.9382): 什么意思 ?
+INFO:root:[07:26] Tom (0.9999): 谁的错 ?  我说 ,  我要说 , 然后我喝我的茶。
+INFO:root:[07:32] Ula (1.0000): 对。
+INFO:root:[07:32] Tom (1.0000): So I said, I want to say, and then I stopped, and then drank my tea. That was just a faux pas, because you also drank your smoothie at the same time.
+INFO:root:[07:40] Ula (0.9998): 你喝
+INFO:root:[07:40] Tom (0.9997): , 我也喝。 It was just silence, and then the sound of...
+INFO:root:[07:43] Ula (1.0000): 没问题 , 没问题 , 没事
+INFO:root:[07:45] Tom (0.9997): , 这是我们的广播。 Okay, 没事。
+INFO:root:[07:47] Ula (0.9992): 我们可以做我们想做的事情。
+INFO:root:[07:49] Tom (1.0000): We can, we're allowed to. Now, I want to speak about
+INFO:root:[07:51] Ula (0.9999): Dale.
+INFO:root:[07:53] Tom (1.0000): I want to talk about Dale.
+INFO:root:[07:54] Ula (1.0000): 谁是 Dale?
+INFO:root:Almost Anomaly: (6.149999999999762) ' I mean, I only a little bit about it because I've spoke to Dale very briefly on LinkedIn and I'm going to speak to him a bit more.'
+INFO:root:[07:55] Tom (1.0000): Right, so Dale, Dale, Well, I don't know, actually. I mean, I only a little bit about it because I've spoke to Dale very briefly on LinkedIn and I'm going to speak to him a bit more. But a gentleman called Dale, who is like a tech guy, actually quite a senior tech guy and a product guy and an entrepreneur, I think from the States, right?
+INFO:root:[08:16] Ula (0.9998): Atlanta.
+INFO:root:[08:19] Tom (1.0000): Yeah, yeah. In the States, right? Obviously very, very smart guy. He has been working on a problem.
+INFO:root:Detected episode: 
+INFO:root:[08:56] have problem.
+INFO:root:[08:56] Tom (1.0000): English or one language. Now, the thing is, they contact us, they go, love your show. It was a great episode on insert episode here. When you talked about insert episode description here, it's just like a mass email thing, right? And they say, I think it would be really great. Now I reply, hey, that's cool. Sounds great. We'd love to, you know, because I'm super interested in getting transcription services because for our listeners, a transcript would be probably really useful Right,
+INFO:root:[09:52] Ula (1.0000): sometimes
+INFO:root:[09:54] Tom (1.0000): Now, Dale has taken it upon himself, being an enterprising gentleman, to try and solve that problem. And I think it's
+INFO:root:[10:02] Ula (0.9986): partially
+INFO:root:[10:03] Tom (1.0000): solved. I don't know. I mean, Dale can totally correct me. I don't know if it's completely solved, but he's much closer than anyone we've spoken to so far in regards to. He sent us along a sample of it.
+INFO:root:[10:15] Ula (0.9827): But
+INFO:root:[10:16] Tom (0.9999): I still think there is some elements of manual checking that he's had to do.
+INFO:root:[10:23] Ula (1.0000): That's the problem.
+INFO:root:[10:27] Ula (1.0000): Yeah, yeah. How
+INFO:root:Detected episode: 3
+INFO:root:[10:47] Tom (1.0000): close are you saying some of it was wrong for your side, was it?
+INFO:root:[10:51] Ula (0.9999): 我觉得大概有 10%,20% 的字是不对的。
+INFO:root:[10:54] Tom (0.9999): That's good.
+INFO:root:[10:54] Ula (1.0000): 对啊 , 已经很好了。
+INFO:root:[10:57] Tom (1.0000): If it's close enough.
+INFO:root:[10:57] Ula (0.9999): 对 , 可是它没有翻译全部的 episode,  它是翻译可能一分钟 , 一分钟两分钟的 audio,  然后 another episode for another one minute, two minutes.  所以它不是整集的 , 全部的那个字幕。
+INFO:root:[11:19] Tom (1.0000): Yeah, I'm super interested by it. I think like it'd be fascinating. I mean, obviously one day it can be done, I think.  我不知道。 The problem is how do you distinguish between two languages if you
+INFO:root:[11:35] Ula (1.0000): mix them?  因为在这个 Dell 他给我们的 transcript 里面有一句话就是我们好像说了英文和中文 , Chinglish, right?  然后他的那个翻译是全部都是中文。
+INFO:root:[11:50] Tom (1.0000): Yeah.
+INFO:root:[11:50] Ula (1.0000): 他没有翻英文。 That's the point.  所以就变成了他找了一个最近的中文的 pronunciation, 然后就放在里面。 Yeah, yeah, yeah. And
+INFO:root:[11:59] Tom (1.0000): the problem is like with pronunciations that, for example, what comes to mind like  给我。 So if I said something like  嗯  给咪  给咪 Yeah? If I mixed... If I used  亲 in that instance, it would pick up the word  给 for English because it sounds so similar to the word English.
+INFO:root:[12:26] Ula (0.9984): 对 As
+INFO:root:[12:27] Tom (0.9813): well, right?  对
+INFO:root:[12:28] Ula (0.9999): , 就是很近的音  英文跟中文很近的音 Yeah, when they're real
+INFO:root:[12:32] Tom (0.9999): close.
+INFO:root:[12:33] Ula (1.0000): 对 , 它会  起司
+INFO:root:[12:36] Tom (0.9997): Close, right? Maybe it wouldn't pick that up.
+INFO:root:[12:38] Tom (1.0000): Do you know what I mean? It's like words like that.  谁 or something. How would it distinguish between the fact that, oh, that's a That's a Zhonglish. That's a Zhongwen word. And that's an English word. I don't know, but Dale knows.
+INFO:root:[12:49] Ula (0.9999): He did pick
+INFO:root:[12:50] Tom (1.0000): some
+INFO:root:[12:51] Ula (0.9999): Chinglish sentence in the script.
+INFO:root:[12:53] Tom (1.0000): Yeah. I think that's manually done.  我想我们的广播的想法是很好的。 Sorry, did you hear that? I don't know
+INFO:root:[13:34] Ula (1.0000): when it will come out.
+INFO:root:[13:38] Tom (1.0000): I wonder if the translation will pick that up. Unknown. Unknown sound. Yeah. We spoke about like a network of bilingual podcasts, which have the same idea. You don't mean a Spanish host and an English host
+INFO:root:[13:54] Ula (0.9998): who
+INFO:root:[13:54] Tom (0.9999): understands Spanish speaking. Dan said that the transcripts would be very useful. I think it should be useful. So thank you, Dale, for working on that. And I hope it's,
+INFO:root:[14:04] Ula (0.9945): if
+INFO:root:[14:05] Tom (1.0000): anything, like Dale's obviously studying being I hope if anything, the project gives you something enjoyable to do currently, you know, whilst you're busy doing other stuff, cause it's like enjoyable to do. It gives you a project to, to try and figure out. We have a good, a good friend of ours also called Alex, who is a developer.
+INFO:root:[14:24] Ula (0.9980): Yeah.
+INFO:root:Almost Anomaly: (6.750000000000069) ' He helped us build an uploader for our app and all this kind of stuff.'
+INFO:root:[14:25] Tom (1.0000): He also nearly took on that problem. He, he, he was, he got swamped by other things. He helped us build an uploader for our app and all this kind of stuff. He's a lovely guy. But he also, he also said, Ooh, that's a good problem. So today I will record a video  但是我需要开始  我需要说中文  因为我需要介绍  小红书  我需要介绍  因为美国 They're looking to ban TikTok on the 19th Which is upset a lot of people So  很多美国人  他们去 download  下载  下载吗 ?
+INFO:root:[15:25] Ula (1.0000): Yeah  下载
+INFO:root:[15:25] Tom (0.9999): 下载  这个 APP 是  小红包  小红包
+INFO:root:[15:31] Ula (1.0000): 小红包 Little envelope.
+INFO:root:[15:35] Tom (1.0000): It's Chinese owned Chinese app or social media company. Basically it's TikTok, but in China. And it's the most downloaded app on the UK app store. Like most of European countries, American app store is like the number one right now. And I make a video joking about it, basically.  因为很多人现在他们是要学中文。 So now is like a great time to come over to Mandarin Monkey and learn for sure.
+INFO:root:[16:14] Ula (1.0000): 这里很好笑 , 我打了小红书 , 然后找那个新闻。  然后真的就是全部 , including BBC,  它就说 TikTok 难民 ,
+INFO:root:[16:24] Tom (0.9999): they call it
+INFO:root:[16:25] Ula (0.9990): refugees.
+INFO:root:[16:25] Tom (0.9996): 难民
+INFO:root:[16:26] Ula (0.9993): , 永向另一个中国的平台。
+INFO:root:[16:31] Tom (0.9876): TikTok
+INFO:root:[16:32] Ula (1.0000): is banned.  但是他们又去了另外一个也是中国的平台。  然后 , 对啊 , 好多人都在说 , like,  这是一个很有趣的 behavior.
+INFO:root:[16:45] Tom (0.9999): It's interesting. And the American public are sort of doing it just to spite the government in the sense of like, you know, you're trying to ban it because we're giving our, you don't want to share our data with China. Now we're going to share our data with China voluntarily. Wow. It's interesting. And people like Mr. Beast, for example, are trying to buy TikTok. Really?
+INFO:root:[17:39] Tom (1.0000): Just turn it
+INFO:root:[17:53] Ula (1.0000): into their own. Turn TikTok into American.
+INFO:root:[17:56] Tom (0.9984): Yeah. Now TikTok are refusing. They're saying, no, we're not, we're not selling to you guys. We're no, um,
+INFO:root:[18:04] Ula (1.0000): yeah,
+INFO:root:[18:05] Tom (0.9015): but, um,
+INFO:root:[18:07] Ula (0.9800): well, I guess
+INFO:root:[18:08] Tom (1.0000): it's, it's, I mean, I don't know. I won't visit cause I won't visit our, CEO or board, but like, um, maybe pride, maybe it makes, maybe it makes way more money than what they're being offered. Um, when?
+INFO:root:[18:21] Ula (0.9998): When are they going to do it?
+INFO:root:[18:23] Tom (1.0000): 19th Sunday, I think.
+INFO:root:[18:25] Ula (0.9998): Oh,
+INFO:root:[18:26] Tom (0.9965): 19th. Yeah, literally on Sunday, there's going to be an America-wide ban, shutdown of TikTok. I don't know how they're going to... They're apparently going to shut down the servers. So it's just going to go, not for us.
+INFO:root:[18:39] Ula (1.0000): 欸 , 他说这里台湾也会用欸。
+INFO:root:[18:42] Tom (1.0000): We'll miss them. Huh? I'll miss them. You don't really use TikTok, do you?  我不用。 Yeah.
+INFO:root:[18:48] Ula (0.9981): 我觉得太多了。
+INFO:root:[18:50] Tom (0.9998): 太多什么 ?  太多东西了。 You're still one of the old school, that's why.
+INFO:root:[18:55] Ula (1.0000): 不是
+INFO:root:[18:57] Tom (0.9724): , 我是觉得都一样。 You're guarding the old school.
+INFO:root:[18:59] Ula (1.0000): 没有啊 , 因为我有 Facebook, 我有脸书嘛 , 然后也有 Instagram, 但是是 Mandarin Monkey 的 Instagram 。  然后还有 , 之前我有看过 TikTok, 可是大家都是在上面跳舞。
+INFO:root:[19:12] Tom (1.0000): It's not just that.  一前啊 , 以前。 Yeah, yeah, yeah, but once the algorithm sort of picks up how old you are, you just see your own, what the stuff you like. Because that's what it does, like the whole point in the swan farmer.  对啊
+INFO:root:[19:25] Ula (1.0000): , 算法。  可是脸书的算法也是一样啊。 Right?  然后 Instagram,  我觉得 Instagram 跟 TikTok,  他们好像哦。
+INFO:root:[19:34] Tom (1.0000): 我不想。
+INFO:root:[19:36] Ula (0.9995): 你觉得 ?
+INFO:root:[19:37] Tom (0.9999): Like, no, they're different audiences.
+INFO:root:[19:39] Ula (0.9999): 然后 Twitter?
+INFO:root:[19:40] Tom (0.9998): Totally different.
+INFO:root:[19:41] Ula (1.0000): X.
+INFO:root:[19:41] Tom (1.0000): Totally different. Yeah, totally different.  好哦。
+INFO:root:[19:44] Ula (0.9701): I think so.  可能我看的都是在美国 , 在英国的 Twitter 。 Well,
+INFO:root:[19:49] Tom (1.0000): we have like, there's always, what I'm hearing on social media right now, on TikTok, Why? Why do they not like Facebook? They're old.
+INFO:root:[20:12] Ula (0.9997): Too old? Really? Thread.
+INFO:root:[20:45] Tom (0.9936): Yeah. The
+INFO:root:[20:48] Ula (0.9997): Thread. No one uses that either. That pronunciation is too hard. They say Thread.
+INFO:root:[20:52] Tom (1.0000): Yeah. Why do they? I don't know. No one talks about that.
+INFO:root:[20:55] Tom (1.0000): I don't.
+INFO:root:[20:55] Ula (1.0000): In Taiwan.
+INFO:root:[20:56] Tom (1.0000): Really? They
+INFO:root:[20:57] Ula (1.0000): use it.
+INFO:root:[20:57] Tom (1.0000): I mean around here. Yeah.
+INFO:root:[20:59] Ula (1.0000): Thread. Many young people in Taiwan use Thread. Yeah. And then Instagram. Instagram is also very popular in Taiwan. But he said also Red Book. I don't think.
+INFO:root:[21:11] Tom (0.9998): I don't know if Taiwan.
+INFO:root:[21:12] Ula (1.0000): Hong Shu is very famous in Taiwan.
+INFO:root:[21:14] Tom (1.0000): No, but like, I don't know. It's the most downloaded app now. Social app. The most downloaded in many, many countries now. People, even like, I know English people who are just going over there to see what the Americans are doing. Just like, just to watch the funny, the fun unfold. Like the drama, you know, the interest.
+INFO:root:[21:32] Ula (1.0000): Yeah, yeah, yeah.
+INFO:root:[21:33] Tom (1.0000): It's really interesting just to see everyone. And it's sad. You know, I watched a couple of TikTok videos just sort of saying, look what happened. I think
+INFO:root:[22:03] Ula (1.0000): a lot of times it's politics that ruins everything.  政治。
+INFO:root:[22:31] Ula (1.0000): 政治  来到台湾这样  所以任何这种中国的东西  我们通常都会比较不想用  对  然后美国  我不知道美国跟中国  他们也有很多的问题  对  所以他们常常会在这种  来消消的东西  什么 Instagram 啊  或是什么 Brainwash  我觉得这是 brainwash
+INFO:root:[23:03] Tom (0.8287): right
+INFO:root:[23:03] Ula (1.0000): 就是想要告诉大家  这个还是我们的国家。 We're still in control.  不要来控制我们的感觉。
+INFO:root:[23:12] Tom (0.9999): 我懂。 It's true. It is all propaganda stuff.
+INFO:root:[23:18] Ula (0.9999): 外面呢 , we call it  吃瓜。 We're eating melon seeds.
+INFO:root:[23:23] Tom (0.9999): Melon seeds.
+INFO:root:[23:24] Ula (0.9953): Watching shows.  还有好多好多的 drama 。
+INFO:root:[23:27] Tom (0.9999): Sit back and let it
+INFO:root:[23:28] Ula (1.0000): unfold.
+INFO:root:[23:29] Tom (0.9999): It's so interesting. Yeah, so that's what's going on. So today I'm going to record a video for that. Cool.
+INFO:root:[23:40] Tom (0.9999): What do you want to do? It's going to be super simple. I don't know. I don't know what, cause it's going to be like, I have to practice Wuxia Lianxi, my Chinese. But, but that's the play on the video. It's kind of, I'm not sure whether I'm going to do it like broken Chinese. No, no, no. Don't
+INFO:root:[24:00] Ula (0.9999): do a broken Chinese.
+INFO:root:[24:01] Tom (1.0000): No, to, to, to like, it's an act on, on the, in the sense of I need to practice my Chinese because we're all moving to Redbook.
+INFO:root:[24:09] Ula (1.0000): Then you should do it better.
+INFO:root:[24:10] Tom (0.9963): 而且你可以啊。 That's not practicing, that's doing it. Effectively cheating. That's not the joke then, is it?
+INFO:root:[24:16] It's not
+INFO:root:[24:16] Ula (1.0000): cheating.
+INFO:root:[24:17] Tom (1.0000): The joke is I'm practicing it because we're all moving over there. We all have to practice, right? Or whether I should just do it.
+INFO:root:[24:24] Ula (1.0000): 我觉得如果你把中文说得很好 , it's a twist.
+INFO:root:[24:27] Tom (0.9962): 我觉得。 I could do a timeline.
+INFO:root:[24:31] Ula (1.0000): 很难耶 , 你要怎么来假装自己说得不好 ? Don't you think? It's hard
+INFO:root:[24:38] Tom (0.9990): to pretend.
+INFO:root:[25:09] to speak badly.
+INFO:root:[25:09] Ula (0.9996): 去 mimic  他们怎么说不好的中文 Yeah
+INFO:root:[25:13] Tom (1.0000): Yeah, yeah, yeah. Oh, and by the way, as a tip, want to give you a tip. Okay. If you go to Shaohongshu, if you go there, you download it.
+INFO:root:[25:24] Ula (0.8848): I'm not going there.
+INFO:root:[25:25] Tom (1.0000): If one person, no, the audience. I understand, I understand. If they go over there, if you're going over to Shaohongshu.
+INFO:root:[25:30] Ula (1.0000): Yeah.
+INFO:root:[25:30] Tom (1.0000): Obviously, you guys, if you're listening to this, you're probably learning Chinese anyway, so you'll pick these mistakes up. But there are a bunch of people, Chinese creators, who are just trolling you guys on what, You're so cute.
+INFO:root:[26:13] Tom (1.0000): I hate you it's a trolly thing to do. And I saw loads of videos like that. Telling people, saying things wrong to people.
+INFO:root:[26:38] Ula (1.0000): Definitely
+INFO:root:[26:39] Tom (1.0000): don't say that to someone.
+INFO:root:[26:41] Ula (0.9996): Yeah.
+INFO:root:[26:41] Tom (0.9999): Just be careful. Double, double check. Yeah. Google and various other things. Your Chinese teacher is your friend. I
+INFO:root:[26:49] Ula (1.0000): don't think I'll go to Xiaohongshu. I think I'll have a heart attack.
+INFO:root:[26:53] Tom (0.9993): There's a lot of...
+INFO:root:[26:54] Ula (1.0000): I'm gonna have a heart attack. Like, everyone is speaking wrong Chinese.
+INFO:root:[26:58] Tom (1.0000): A lot of people in there, a lot of Chinese creators, We're very welcoming to people on there.
+INFO:root:[27:05] Tom (1.0000): There's a lot of very nice people, you know, just sort of saying, Hey, you got welcome. This is our culture, blah, blah, blah.
+INFO:root:[27:11] Ula (1.0000): Not a kind welcome.
+INFO:root:[27:16] Tom (1.0000): What, the Tanya? No, that's not. They're just troll. They're just jokers.
+INFO:root:[27:21] Ula (1.0000): Yeah. Yeah, but I think it's very rude. I understand. Because, okay, if
+INFO:root:[27:26] Tom (0.7109): you
+INFO:root:[27:27] Ula (1.0000): want to make a joke today, right? Like, you. You should put on some subtitle.
+INFO:root:[27:34] Tom (0.9998): Like
+INFO:root:[27:35] Ula (0.9999): the real thing. Like that doesn't mean I love you. Doesn't mean
+INFO:root:[27:39] Tom (1.0000): I words. You
+INFO:root:[27:40] Ula (1.0000): need to tell everyone. Because some people will look at things on the internet and then spread the words. Do you understand?
+INFO:root:[27:48] Tom (1.0000): Maybe he really doesn't like foreigners.
+INFO:root:[27:50] Tom (0.9996): 啊
+INFO:root:[27:50] Ula (1.0000): 所以我就说啊  这是一种 Unkind
+INFO:root:[27:55] Tom (0.9999): joke
+INFO:root:[27:55] Ula (1.0000): 我觉得开玩笑有分好的跟不好的  但是我觉得他们是有一种 attack  的感觉
+INFO:root:[28:02] Tom (0.9998): Yeah  对
+INFO:root:[28:03] Ula (0.9261): 我觉得 No
+INFO:root:[28:04] Tom (1.0000): I feel you I feel you Just be careful that's all
+INFO:root:[28:07] Ula (1.0000): 真的要看小红书要小心 Ask your
+INFO:root:[28:10] Tom (0.9999): 老师
+INFO:root:[28:11] Ula (0.9999): 要问你的老师 Like  这个是  他他说的是对的吗
+INFO:root:[28:14] Tom (0.9998): 老师  超你可以吗 What?
+INFO:root:[28:29] Ula (0.9999): What?
+INFO:root:[28:49] Tom (1.0000): Yeah, yeah, yeah. Don't do that. Yeah, yeah. But yeah, so there's a lot of good and interesting and jokes and stuff over there. It's the same thing as TikTok really.  对啊
+INFO:root:[28:59] Ula (1.0000): , 我觉得这种行为 , 这种 behavior  是我很不喜欢 , 只是因为 like people
+INFO:root:[29:05] Tom (0.9976): will
+INFO:root:[29:05] Ula (0.9999): put on  很不好的 reputation
+INFO:root:[29:08] Tom (1.0000): on
+INFO:root:[29:08] Ula (1.0000): Mandarin, Chinese  所以我不想要让大家  我不想要让大家觉得  说中文 is a
+INFO:root:[29:14] Tom (1.0000): rude
+INFO:root:[29:14] Ula (1.0000): thing to do  我觉得这不太 ,it's not fair  因为这是我的 mother tongue, right?  所以如果我去美国  然后我说中文 and people think I'm
+INFO:root:[29:26] Tom (1.0000): rude Like,
+INFO:root:[29:27] Ula (0.9998): no, this is my language. Like, don't do that to my language.
+INFO:root:[29:31] Tom (1.0000): I think, I think actually this shows the amount of people that have gone over to Songzhou is, is proof that the real people don't care as much as the government make it out they do about China or the language or anything like that.
+INFO:root:[29:47] Tom (1.0000): Do you know what I mean? I think, I think we, we saw a dip in people who, who wanted to learn Zongwen because of, the government over there, right?
+INFO:root:[29:58] Ula (0.9976): Yeah.
+INFO:root:[29:58] Tom (1.0000): And then what was going around? Are you dizzy? your throat? Okay. I'm
+INFO:root:[30:04] Ula (1.0000): letting the beast out.
+INFO:root:[30:05] Tom (1.0000): And I hope this, this sort of picks it back up because.
+INFO:root:[30:08] Ula (1.0000): I think adults, obviously.
+INFO:root:[30:11] Tom (0.9534): It ain't what they say.
+INFO:root:[30:12] Ula (1.0000): Yeah. I think adults, obviously we can't avoid them. We can't control them.
+INFO:root:[30:17] Tom (0.9992): We
+INFO:root:[30:17] Ula (1.0000): can't control them. But I'm worried about children. Like young people. Because they, they,  他们太年轻 , 他们还不懂就是什么是对的 , 跟什么是不对的。
+INFO:root:[30:31] Tom (1.0000): 对啊 , 但是我们的孩子是不一样。
+INFO:root:[30:33] Ula (0.9999): 对啊 , 只是在英国我们还没有这个问题啦 , 对不对 ?  但是在美国 , 他们的小孩 , 他们年轻人 , 他们会需要 ,  他们如果真的在小红书上面看到一些很 crazy 的影片 , 很疯狂的影片 ,  他们会觉得 that's
+INFO:root:[30:51] Tom (0.9999): true, that's real world. Yeah.
+INFO:root:[30:54] Ula (1.0000): Yeah,
+INFO:root:[30:57] Tom (0.9941): no, I get it. Yeah. But, but, but, but, uh, I mean, this is not the end of anything. I mean,
+INFO:root:[31:05] Ula (0.9993): I'd
+INFO:root:[31:06] Tom (0.9999): be surprised if they actually did it. If they actually turn everything off, that'd be interesting.
+INFO:root:[31:12] Ula (0.9683): Yeah.
+INFO:root:[31:13] Tom (0.9999): Well, we don't know. I mean, I, someone could buy it. The government could, I mean, there's, there's senators now who are trying to, um, put delays on the ban. to try and understand it better because it's annoying so many people. Like 150 million people, 170 million people are really quite annoyed by this. So like that's a lot. That's like half your country. You know, half America, whatever it is.
+INFO:root:[31:39] Ula (0.9999): don't know
+INFO:root:[31:46] Tom (1.0000): what we were talking about because I just got a phone call and I had to answer it because it was about money.  我的工作是一个经理吗 ?  我们的经济是我的问题。
+INFO:root:[31:59] Ula (0.9999): 辛苦你了。
+INFO:root:[32:02] Tom (1.0000): So I had to answer that, apologies.  我忘记了 , 我们的对话是什么。 Probably TikTok and  小红书。
+INFO:root:[32:10] Ula (1.0000): 对 , 我刚好好像是要问你 ,  如果 TikTok 真的不见 ,  你不觉得它会 completely 不见 ?
+INFO:root:[32:17] Tom (1.0000): Well, it's hard to believe, isn't it? An entire America.  对。 An entire social network.  可是为什么 ?
+INFO:root:[32:25] Ula (1.0000): 为什么 TikTok 这么的重要 ?  就是因为如果没有 TikTok,  他们还是有 Instagram,  他们还是有 X 。
+INFO:root:[32:31] Tom (1.0000): Because the government, because X is owned by Americans, so is Twitter. Sorry, so is Meta, so is Instagram. TikTok is not owned by Americans. It's owned in Singapore. And it's partially owned by the Chinese government. Okay. And the American government do not want China. They think China is stealing the data of all the Americans and using it for, I don't know what they think. Oh. Honestly, I haven't listened to the, what the government's point of view is in depth, but.
+INFO:root:[33:05] Ula (0.9999): So they
+INFO:root:[33:06] Tom (1.0000): don't, they just don't want the Chinese government to have access to American data. So they want to.
+INFO:root:[33:15] Ula (1.0000): I understand. is the users. I mean.
+INFO:root:[33:17] Tom (1.0000): Yeah.
+INFO:root:[33:19] Ula (1.0000): 他们觉得 TikTok 真的好重要 , 真的好重要。 If it completely disappeared, my life is ruined.
+INFO:root:[33:26] Tom (0.9970): 这种态度 , 这种想法。 For example, there are 5 million American businesses on TikTok. 5 million American businesses that sell on TikTok and make a
+INFO:root:[33:35] Ula (1.0000): living.
+INFO:root:[33:36] Tom (1.0000): It will close them down entirely. And there are millions of creators who make money from TikTok.
+INFO:root:[33:42] Ula (1.0000): 你说他们很多美国公司会在 TikTok 上面卖东西到亚洲去
+INFO:root:[33:46] Tom (0.9999): , 是吗 ? Yeah. Yeah. Well, you know, they sell stuff, whatever their business is, I don't know, online. Because there's TikTok shops and stuff where they sell their merchandise and whatever they do.
+INFO:root:[33:57] Ula (1.0000): Yeah.
+INFO:root:[33:57] Tom (1.0000): They will close down completely. And creators who have spent years building millions of followers.
+INFO:root:[34:03] Ula (0.9999): Oh no, But
+INFO:root:[34:04] Tom (1.0000): like they make money from it. That's sad. It feels like you're being sarcastic.
+INFO:root:[34:10] Ula (1.0000): Of course. Of course.
+INFO:root:[34:12] Tom (0.9442): No, no, no.
+INFO:root:[34:13] Ula (1.0000): I feel like it's too serious. How
+INFO:root:[34:16] Tom (0.9999): would you feel that?
+INFO:root:[34:19] Ula (1.0000): 因为我觉得就是大家把它看得太严重啊。
+INFO:root:[34:22] Tom (1.0000): Yeah, but think, if our main income source comes from YouTube and they shut it down, how annoyed would we be?
+INFO:root:[34:32] Ula (1.0000): 我懂啦 , 我懂 , 可是你还是 , like TikTok 它也是一个 platform, right?
+INFO:root:[34:37] Tom (1.0000): Yeah.
+INFO:root:[34:38] Ula (0.9993): So are other ones.  其他也有其他的平台啊。
+INFO:root:[34:43] Tom (1.0000): 但是 ,you have to build,  你需要盖你的平台。 From the start, from zero, again.  好喔。 If me and you built 10 million followers on YouTube and they shut it down, and we have no followers on the other platforms, you have to start again. And it took you a decade to get to 10 million.
+INFO:root:[35:03] Ula (1.0000): 然后小红书 can replace.
+INFO:root:[35:04] Tom (1.0000): Now they're hoping that anything...
+INFO:root:[35:06] Ula (1.0000): 所以他们会把他们的工作 , 他们的公司
+INFO:root:[35:10] Tom (0.9382): , 搬到小红书去。  我不知道。  我不知道他们的公司 ,  但是我想他们 joined  小红书因为 it will annoy the government. Because the whole government's point is you'll give, we don't want you to share your data with China. And then the American citizens are going, we're going to voluntarily share our data with China as a choice.
+INFO:root:[35:31] Ula (1.0000): And 现在 , I'm sure,  在美国的政府 , 他们一定知道小红书 exist, right?
+INFO:root:[35:38] Tom (1.0000): 我不知道。  一定知道 , 一定知道。 No, no, you think that, but. I've heard, and this could be social media, but like there are senators on there who barely know technology. Like, do I have to connect to Wi-Fi to get on a TikTok? That kind of thing.
+INFO:root:[36:00] Ula (1.0000): 我说的是政府耶。 Government.
+INFO:root:[36:03] Tom (1.0000): Yes, the government. Yes, I'm saying there's politicians, senators in there who don't know technology enough to understand how it works.
+INFO:root:[36:10] Ula (1.0000): 新闻很大耶。 Right?  新闻很简单 , easy to access to.  所以他们如果知道 TikTok,  他们一定知道小红书。 Now,  现在如果他们知道 ,  现在如果政府知道 , OK,  大家全部都去小红书 , So what?  小红书 is the next target. Yeah.
+INFO:root:[36:30] Tom (0.9999): Well, they'll have to keep banning everything.
+INFO:root:[36:33] Ula (1.0000): OK,  好 ,  所以我觉得你刚刚讲到一个 good point,  就是如果是 about business, I
+INFO:root:[36:38] Tom (0.9970): agree,
+INFO:root:[36:38] Ula (1.0000): I feel bad for them.  如果他支持他们的生意 , 他们的公司的话 ,  当然我支持他们 ,  他们要找另外一个平台 , that is easy to sell the stuff,
+INFO:root:[36:51] Tom (0.9873): 我懂。
+INFO:root:[36:51] Ula (1.0000): 但是不要为了要去 annoy  政府 , so to do it.
+INFO:root:Almost Anomaly: (6.674999999996181) ' Do you know what I mean?'
+INFO:root:[36:57] Tom (0.9994): 你懂我的意思吗 ? The users are doing it, because they're not going to have a social media platform. They don't enjoy meta, because it's old, it's done. Neither with Instagram, it's done. Twitter is different. Twitter is not a video content platform. it's a news, like instant news kind of thing. There's no other platform that's like TikTok currently. I mean, there's like Snapchat and stuff, but it's not, it's not for those things.
+INFO:root:[37:23] Tom (1.0000): Do you know what I mean? So they're like rebelling and basically saying we're going to find something else. And I don't know if the government knew about Shang Shu, but now they do because millions and millions and millions of people are joining it. And they, I bet you in a meeting room somewhere, they went, ah, shoot. Shoot. They're all joining.
+INFO:root:[37:42] Ula (0.9999): 可是这个没有方法 , 没有办法去解决。  如果真的 …
+INFO:root:[37:49] Tom (1.0000): 你要做中国的事。
+INFO:root:[37:50] Ula (1.0000): 我的意思是想说 , 如果真的很多中国的 spy,  他们来 TikTok, 然后要偷大家的资料 ,  那美国可以找一个很厉害的团队 ,  然后建立一个大战争 ,
+INFO:root:[38:11] Tom (0.9898): Firewall.
+INFO:root:[38:12] Tom (1.0000): Firewall, yeah.
+INFO:root:[38:13] Ula (1.0000): Right? To stop that happen.  那在美国的人 ,  他们的如果想要把他们的产品  卖到亚洲 , 卖到中国 , They still can keep their business going.  因为他们有一个保护啊 , right?  所以应该不需要 like being so extreme.  他们还是可以找办法 to try and keep TikTok going.  然后 maybe build a firewall  去保护美国人 ,  他们的隐私。  对不对 ?  我觉得啦 , 这只是一个 discussion, right?  我觉得政府可以这么做 ,  然后让在美国的公司不要 lose their business, lose their
+INFO:root:[38:55] Tom (0.9999): jobs. Yeah. The government don't care, obviously, because they're banning it. The senators and whatever, they don't care about that, obviously, because it's overwhelmingly they voted to ban it.
+INFO:root:[39:06] Ula (1.0000): 所以 again, like back to  政治 , 就是 They ruin everything.
+INFO:root:[39:12] Tom (0.9999): It's a stupid thing to do. They
+INFO:root:[39:16] Ula (1.0000): think they're our rivals. So we have to let them come into our country.
+INFO:root:[39:24] Tom (1.0000): They're going to have to ban Redbook now.
+INFO:root:[39:30] Ula (0.9998): In
+INFO:root:[39:31] Tom (0.9999): America. Where
+INFO:root:[39:33] Tom (0.9964): are they going to go? What's that?
+INFO:root:[39:39] Ula (1.0000): What's that? Line.
+INFO:root:[39:41] Tom (1.0000): No, no, that's not a video sharing platform. No.
+INFO:root:[39:46] Ula (0.9988): Where else?
+INFO:root:[39:47] Tom (1.0000): I don't know. I didn't even know Xiaohongshu existed.
+INFO:root:[39:50] Ula (0.9888): Oh, you don't know?
+INFO:root:[39:51] Tom (0.9999): No, not until this whole thing. That's the point. I had no idea.
+INFO:root:[39:56] Ula (1.0000): They're
+INFO:root:[39:57] Tom (0.9999): In China, but not over here. Now they're big over here because of that. Because of TikTok's closing down. But that's the point. I had no idea. I bet you that the government didn't even know. But now they do because it's so... Now it's... Okay.  还好吗 ?  我妈的孩子。  对对对。  她有问题。
+INFO:root:[40:16] Ula (1.0000): 对。  她还好。
+INFO:root:[40:17] Tom (0.9824): He fell over.
+INFO:root:[40:18] Ula (0.7605): Yeah.
+INFO:root:[40:19] Tom (1.0000): Graze's knee. Okay.
+INFO:root:[40:20] Ula (1.0000): 还好
+INFO:root:[40:20] Tom (0.9974): , 没事。 Good.
+INFO:root:[40:21] Ula (0.9999): 他们都健康。
+INFO:root:[40:22] Tom (0.8739): 我刚刚看到了。  吃。
+INFO:root:[40:24] Ula (0.9999): 对啊
+INFO:root:[40:25] Tom (0.9973): , 好啦。 Yeah.
+INFO:root:[40:26] Ula (1.0000): 大家 , calm down,  冷静。  不要。
+INFO:root:[40:30] Tom (0.9996): So that was it, you know, that's it.
+INFO:root:[40:31] Ula (0.9998): 冷静 , 冷静。
+INFO:root:[40:33] Tom (1.0000): One of the things is, you know, I'll tell you what I know about, just so I go back to transcripts. Well, I use, ChatGPT.
+INFO:root:[41:07] Ula (1.0000): can't watch our
+INFO:root:[41:08] Tom (0.9999): video. No, no, no, it can't. But, but, but, uh, you have to, you know, you have to use some kind of AI tool like Dale is sort of building or whatever, uh, to transcribe the episode. And then you download that as a PDF, put it in chat GPT. Hey, can you transcribe this for me? You know?
+INFO:root:[41:24] Tom (1.0000): So I manually have to listen to our show when I edit it and then type it in and say like that we this and that and we discussed this and you know what I mean? So it's a whole thing.
+INFO:root:[41:35] Ula (1.0000): Yeah.
+INFO:root:[41:35] Tom (1.0000): Anyway. Anyway, you're right.  大哥吗 ?
+INFO:root:[41:40] Ula (0.9999): 对。
+INFO:root:[41:40] Tom (0.9999): 很恶心啊。
+INFO:root:[41:43] Ula (0.9999): 我没 , 他们没有听到啊。
+INFO:root:[41:45] Tom (0.9999): No, no, they don't know, that's fine. But I can tell. And we've got an excitingly,  这很兴奋啊。 I don't know if I, I think we told you about our new little things, like hobbies we're going to do, candle making and doing a music, doing, writing a song. Book nook.
+INFO:root:[41:58] Ula (0.9999): 我们最近买了一个新的 book nook.
+INFO:root:[42:00] Tom (1.0000): We bought a new book nook. It's like a magical shop.
+INFO:root:[42:04] Ula (0.9953): 魔法的。  什么意思 ?  它好像是一个很像是一个电视的 design.
+INFO:root:[42:16] Tom (0.9997): It's a TV with a funfair in it.
+INFO:root:[42:18] Ula (0.9968): 它比较像是 display 的 .
+INFO:root:[42:20] Tom (1.0000): It's not supposed to go in between books. I suppose it could do. They are though. They're like the size of books.
+INFO:root:[42:25] Ula (1.0000): 可以啦 , 你还是可以把它放在书和书的中间 ,  但是它就是有点太大了。
+INFO:root:[42:31] Tom (0.9999): Yeah, yeah.
+INFO:root:[42:32] Ula (0.9945): 它有点大。
+INFO:root:[42:33] Tom (1.0000): need a better place to put them as well, maybe. Yeah. We need to think about that. This whole thing is disgusting. Right. No, do you know what it is? It's, this is really good.
+INFO:root:[42:48] Ula (1.0000): Okay.
+INFO:root:[42:49] Tom (0.9996): I like this.
+INFO:root:[42:49] Ula (1.0000): I
+INFO:root:[42:50] Tom (1.0000): like that we did this. I think this little design wall is cool.
+INFO:root:[42:52] Ula (1.0000): Yeah.
+INFO:root:[42:52] Tom (1.0000): And it helps the sound and everything. That wall I use for videos on a white wall, which is okay, but I don't like it. As like as a design, it's just a plain white wall. It's just, yeah. Don't like that.
+INFO:root:[43:03] Ula (1.0000): 好哦。
+INFO:root:[43:05] Tom (0.9996): I just don't like it.
+INFO:root:[43:07] Ula (1.0000): 我们需要 interior designer  来帮我们设计我们的房子。
+INFO:root:[43:12] That
+INFO:root:[43:12] Tom (0.9999): whole thing.
+INFO:root:[43:14] Ula (0.9998): 还有下面那里 ,
+INFO:root:[43:15] Tom (0.9256): 全部都好乱哦。 Yeah, I don't know. Anyway, there's 很多东西 , like I got so much equipment, we have like equipment here I use every day. I can't keep packing up and storing it away, although I'd like more space and less wires.
+INFO:root:[43:27] Ula (0.9999): Well,  我告诉你什么东西最有用。 What
+INFO:root:[43:31] Tom (1.0000): does that mean?
+INFO:root:[43:32] Ula (0.9355): It's storage
+INFO:root:[43:33] Tom (0.9773): boxes. It's not going to help. With all that stuff, with the big stuff.
+INFO:root:[43:38] Ula (0.9725): 蛤 ?  没有 , 就像 ,OK, 你说你的架子嘛
+INFO:root:[43:42] Tom (1.0000): ,the
+INFO:root:[43:42] Ula (1.0000): shelf,  你有很多东西 , 如果你把它放在那个箱子里面 ,  你买好看的 , 好看的箱子 ,  然后把它全部放在里面 ,  就会比较整齐 , 比较好看 , 对啊 ,  然后就是不要放一些有的没的 , like, just  只有书 ,maybe 你需要只放书 ,  不要放一些小的 ,like, random equipment 在上面 ,  就是有一点点奇怪。
+INFO:root:[44:06] Tom (1.0000): Yeah, it is random. I want the book sags, I want to be reminded. Like I like having some of those book sags. It reminds me of
+INFO:root:[44:12] Ula (1.0000): a fantastic time.  我觉得左边很好看 , 但是右边 , they can all go away.
+INFO:root:[44:17] Tom (1.0000): That's all mental.
+INFO:root:[44:18] Ula (1.0000): 对 , 所以你需要把他们全部拿掉 ,  然后把你所有的书全部放上去
+INFO:root:[44:22] Tom (0.9999): , 这样
+INFO:root:[44:23] Ula (1.0000): ,OK?
+INFO:root:[44:23] Tom (1.0000): 好
+INFO:root:[44:24] Ula (1.0000): , 不要讨厌你的 space, 因为这个空间很大
+INFO:root:[44:29] Tom (0.9661): , 很好耶。 I need to go to Ikea and with the mindset of buying myself things that make me feel okay, good. Like I'd like probably a shelf up there
+INFO:root:[44:41] Ula (0.9999): and
+INFO:root:[44:42] Tom (1.0000): put those books up there so I can see them when I'm working. And I want to see that there's a little thing that our daughter bought me, I think, or our son, one of our sons, that says if daddy can't fix it, no one can. And that actually mentally helps me sometimes when I'm feeling a bit like troubled up here. I want to buy a little plant, even a fake one.
+INFO:root:[45:14] Ula (1.0000): Yeah. Yeah, I know. Yeah.  变成是你的家。
+INFO:root:[45:50] Tom (0.9997): 我觉得这是一个不简单的工作。 Yeah.
+INFO:root:[45:52] Ula (1.0000): 时间嘛 , 就是真的是需要时间。  我们才搬进来多久 ?  三个月喔 ?
+INFO:root:[45:57] Tom (1.0000): Yeah.
+INFO:root:[45:58] Ula (0.9928): 两个 、 两 、 三个月。
+INFO:root:[46:00] Tom (1.0000): End of November, wasn't it? sure.
+INFO:root:[46:03] Ula (1.0000): 所以我们搬进来的时间很短很短啊。  我们需要很多的时间把它变成是我们的。
+INFO:root:[46:10] Tom (1.0000): I just never, I never like, I just feel like I never go out with the intention of buying myself stuff. Like I never go out. It's always like buy the house something. Buy you guys, make sure you guys have your, what do you want? You want lights? What kind of lights do you want?
+INFO:root:[46:24] Tom (1.0000): You want them to, do you know what I mean? Or whatever it is. Or stuff for us, like the studio stuff. Like, okay, we need to buy stuff for the studio. Or, you know, you do it too. You buy a table or whatever. But I never like go out thinking, right, what do I want? Like what kind of thing do I, because sometimes I don't even know. I'm like,
+INFO:root:[46:41] Ula (0.9996): I don't even
+INFO:root:[46:43] Tom (0.9999): know what I want.
+INFO:root:[46:44] Ula (0.9999): 在 IKEA 有一个区域是 TOM'S HEAVEN,  就是那个电 , 灯的那个。
+INFO:root:[46:48] The lights,
+INFO:root:[46:48] Tom (1.0000): yeah man, I love it.
+INFO:root:[46:50] Ula (0.9950): 全部都是科技的东西 , 你好喜欢喔。
+INFO:root:[46:54] Tom (1.0000): Yeah, yeah.
+INFO:root:[46:54] Ula (1.0000): 对啊 , 你需要去那里 , 然后你就看 ,  因为你喜欢灯嘛 , 你喜欢那种科技的东西。
+INFO:root:[47:01] Tom (1.0000): We need to fix that problem.
+INFO:root:[47:02] Ula (1.0000): Yeah.
+INFO:root:[47:02] Tom (0.9975): Just bulbs.
+INFO:root:[47:04] Ula (1.0000): 这是你的空间啊 , 你可以做你想做的东西 ,  你可以买你想要买的东西。 Yeah, go mental.
+INFO:root:[47:11] Tom (1.0000): The thing is, it's a... Go banana. It's a working room, isn't it? So it's kind of like, it has to be functional. Cause you know, I want to paint a picture of Gandalf and the, and the fellowship of the ring on that wall.
+INFO:root:[47:26] Ula (1.0000): Yeah.
+INFO:root:[47:27] Tom (1.0000): But I can't cause I need to keep it white because it's a, it's a filming wall. Right. So I can't do anything with air really. I'm thinking we need a corner desk or a standing desk would be nice. Somewhere I could stand up like it raises up. Just like stand a little bit during the day.
+INFO:root:[47:39] Ula (1.0000): Oh, I want
+INFO:root:[47:40] Tom (0.9999): Right. You too, right? We can get two.
+INFO:root:[47:42] Ula (1.0000): Yeah. And
+INFO:root:[47:42] Tom (1.0000): reduce the size of that maybe a little bit or keep it the same as it are.
+INFO:root:[47:46] Ula (1.0000): Yeah.
+INFO:root:[47:47] Ula (1.0000): We need to do it, don't we?
+INFO:root:[48:09] Tom (1.0000): There's so many things to do though. We need to buy a mower as well.
+INFO:root:[48:13] Ula (1.0000): 今天我们要 decorate  我们的厨房 Our kitchen wall  因为中国新年要到了  要过年了 Chinese New Year  所以我买了一些 Is that
+INFO:root:[48:25] Tom (1.0000): 今天吗 ?
+INFO:root:[48:26] Ula (1.0000): 不是不是  是两个星期以后
+INFO:root:[48:29] Tom (1.0000): Hang on  你的朋友来吗 ?  没有没有  今天
+INFO:root:[48:32] Ula (1.0000): 没有没有  没有两个星期以后
+INFO:root:[48:34] Tom (1.0000): 是过年  今天是 17 号吗 ?
+INFO:root:[48:39] Ula (1.0000): 对啊
+INFO:root:[48:40] Tom (0.9949): 今天是 17 号 Oh, okay. So it's okay. But when's ours?  三十一吗 ?
+INFO:root:[48:45] Ula (1.0000): 对 , 三十一。  然后我们的朋友下个星期来。  我的朋友下个星期来。 Yeah.  所以我们要布置 , decorate  我们的家 ,  把它变成是一个中国新年的感觉。
+INFO:root:[48:57] Tom (1.0000): We gotta get a smoke machine.  要用烟火机。
+INFO:root:[49:02] Ula (1.0000): 我们需要烟火机。 Firecrackers as well.
+INFO:root:[49:06] Tom (0.9959): 在我们家外面。 Yeah, the lindy would really like that, wouldn't it?
+INFO:root:[49:10] Ula (1.0000): 我记得好像是 ,
+INFO:root:[49:21] Tom (0.9982): Halloween, right?
+INFO:root:[49:41] Oh yeah.
+INFO:root:[49:41] Tom (1.0000): Okay. And then we're going to get a chef Peking.
+INFO:root:[49:44] Ula (1.0000): Are
+INFO:root:[49:44] Tom (0.9998): we?
+INFO:root:[49:45] Ula (1.0000): Are we? What
+INFO:root:[49:47] Tom (1.0000): are we going to get? Like a set meal? I didn't like the second one we had. I liked the first one we had. The first set meal that we, when we went there for the, just me and you?
+INFO:root:[49:56] Ula (1.0000): Yeah.
+INFO:root:[49:59] Tom (0.7207): And then.
+INFO:root:[50:01] Ula (0.9996): But then it was,
+INFO:root:[50:05] Tom (1.0000): it wasn't the same, was it?
+INFO:root:[50:07] Ula (1.0000): No. Yeah.  他们改了他们的菜单。
+INFO:root:[50:10] Tom (0.9889): Yeah.
+INFO:root:[50:10] Ula (1.0000): 对啊 , 不过 , 哇 , 这是 the closest we can get.
+INFO:root:[50:14] Tom (0.9999): It's the closest we can get, guys.
+INFO:root:[50:16] Ula (1.0000): 我们跟 Kara 也去吃啦。 Kara?
+INFO:root:[50:18] Tom (0.9999): 对啊。 She came here a couple of times, I think. Yeah, one time,
+INFO:root:[50:23] Ula (1.0000): two
+INFO:root:[50:23] Tom (1.0000): times.
+INFO:root:[50:24] Ula (0.8290): 两次了。
+INFO:root:[50:25] One
+INFO:root:[50:25] Tom (0.9984): time, two times.
+INFO:root:[50:27] Ula (1.0000): 然后我们带 Kara 去吃这个中国餐厅。
+INFO:root:[50:31] Tom (0.9996): Yeah.
+INFO:root:[50:32] Ula (1.0000): 还不错啦 , 没有到来很不好 , 就是不一样。  对 , 我懂你的意思 , 就是不一样。  可是还是好吃。  我觉得我还是喜欢。
+INFO:root:[50:42] Tom (0.9999): Okay.
+INFO:root:[50:43] Ula (1.0000): 可是我不会想要再回去。 Yeah.  我想要在家吃。  我不想要回去他们的餐厅吃。  因为好吵喔。  来太多人了。 There
+INFO:root:[50:53] Tom (1.0000): is so many people there.  对啊。 And as I say, yeah, but I mean, yeah. All right, let's get it. Let's just do what we do. So I've got to get prepared for that.
+INFO:root:[51:01] Ula (1.0000): 对。
+INFO:root:[51:02] Tom (1.0000): Well,  我们的银行需要准备啊 ?
+INFO:root:[51:05] Ula (0.9949): 不需要。
+INFO:root:[51:06] Tom (1.0000): 为什么 ?
+INFO:root:[51:07] Ula (1.0000): 因为我有钱。 That's nice, isn't it?
+INFO:root:[51:20] Tom (1.0000): That'd be nice having a free thingy. And what's happening with the friends?
+INFO:root:[51:36] Ula (0.9999): 三年 , 我们要一起画画。
+INFO:root:[51:57] Tom (0.9997): 阿娃 ?
+INFO:root:[51:58] Ula (1.0000): Yeah.  然后 , 就是 ...
+INFO:root:[52:00] Tom (0.9999): 那是孩子的活动吗 ?  对
+INFO:root:[52:01] Ula (1.0000): , 还有大人啊 , 大人也可以。  哦 , 大人 , 就大家一起 , 然后就 ,yeah,  就是跟他们 , 我的朋友她是马来西亚人 , She's from Malaysia.  然后他们也有过年 , 所以 , 我们会一起 ,  小小的 gallery, 小小的庆祝。
+INFO:root:[52:18] Tom (0.9976): Yeah. Sounds good. Why did I just hear music?  没有啊。 I thought I heard like, the doorbell or something?  没有。 I'm imagining things. But yeah, you're going to come. Yeah, the friends are going to come around with the kids, play with our kids. And I'm going to be working.
+INFO:root:[52:33] Ula (1.0000): Yeah.  你不想要 social 啊。
+INFO:root:[52:38] Tom (1.0000): I'm going to be working upstairs, doing my job.
+INFO:root:[52:40] Ula (1.0000): Yeah, but you don't want to, right?
+INFO:root:[52:43] Tom (1.0000): I'll come and say hello.
+INFO:root:[52:44] Ula (1.0000): Hi. Bye.
+INFO:root:[52:46] Tom (0.9999): I've literally have three meetings at that time.
+INFO:root:[52:50] Ula (1.0000): Yeah.
+INFO:root:[52:50] Tom (1.0000): Like when they, when they arrive, I'm going to have, I'm going to be in meetings basically.
+INFO:root:[52:53] Ula (0.9973): 没事 , 没事。  没有压力 , 而且我们要吃火锅 , 然后你不喜欢
+INFO:root:[52:59] Tom (0.9994): , 所以。  火锅我不喜欢 , 给我拉肚子。
+INFO:root:[53:02] Ula (1.0000): Yeah, 我们需要买牛排给你吃。
+INFO:root:[53:05] Tom (1.0000): Yeah, that'd be good. I'll enjoy that. Give me some steak.
+INFO:root:[53:08] Ula (1.0000): 然后呢 , 在一月的最后一天 , I think,  最后一个星期是过年的星期 ,  所以我们会 celebrate like a family.
+INFO:root:[53:20] Tom (1.0000): That would be nice. And didn't you find somewhere else where there's, there is some other kind of celebration you wanted to go to?
+INFO:root:[53:26] Ula (1.0000): Okay. Why didn't you
+INFO:root:[53:46] Tom (1.0000): set up a stool? Why don't we do that? Why don't we set up a stool?  帽子吗 ?  做帽子。  你可以得到东西 ?
+INFO:root:[53:56] Ula (1.0000): 可以啊。  我觉得 , 我不知道 , 我不想。
+INFO:root:[54:01] Tom (0.9999): What about lessons?
+INFO:root:[54:02] Ula (0.9998): 太麻烦 , 不要。  我不想工作。
+INFO:root:[54:05] Tom (0.9999): Sell lessons.
+INFO:root:[54:06] Ula (1.0000): 这新年耶 , 这是我放假的时候啊。 Happy New Year,
+INFO:root:[54:09] Tom (0.9999): buy a lesson. Help pay for the takeaway that we're going to have.
+INFO:root:[54:15] Ula (1.0000): No, 我想要去 , 然后 just enjoy the
+INFO:root:[54:18] Tom (0.9990): moment.
+INFO:root:[54:28] Ula (1.0000): Okay, fair enough.
+INFO:root:[54:48] Alright then, fair enough.
+INFO:root:[54:50] Ula (1.0000): 因为可能孩子就会觉得红包拿了 , 然后就不见了。 Like, 他们看不到。  所以我们要给我们的孩子红包 , 然后让他们去买他们想要的玩具。
+INFO:root:[55:01] Tom (1.0000): Yeah, go buy a toy.
+INFO:root:[55:02] Ula (1.0000): Right.
+INFO:root:[55:02] Tom (1.0000): Just make it a bit more fun for the kids, because otherwise they're not really looking forward to anything. They're just like, oh, money, buy money.
+INFO:root:[55:08] Ula (0.9909): 对 , 他们就 , 对啊。
+INFO:root:[55:09] Tom (1.0000): Okay, it's not a thing. So make it a bit more like Christmas in the sense of like, give them some money. So you give them the gift.
+INFO:root:[55:17] Ula (1.0000): 对。
+INFO:root:[55:17] Tom (1.0000): And then they can go buy a toy.
+INFO:root:[55:19] Ula (1.0000): Yeah.  我记得以前。
+INFO:root:[55:20] Tom (1.0000): And we can put some money away from them.
+INFO:root:[55:21] Ula (0.9999): 欸 , 对。  我们会 , 我们会。  我记得以前我会 , 我会拿 , 我的妈妈会收红包 , 我收我的红包 , 然后她会给我一个红包 , 然后可能里面就是 about, 我不知道 , 两百元是英国多少 ?
+INFO:root:[55:39] Tom (0.9992): 两百 ?
+INFO:root:[55:40] Ula (1.0000): 两百 , 除以三十。
+INFO:root:[55:42] Tom (0.9999): 六
+INFO:root:[55:44] Ula (1.0000): , 六磅 ,about 六磅。
+INFO:root:[55:57] Ula (1.0000): Okay, yeah.  刮刮乐。  对 , 我们会去买刮刮乐 , 然后就大家会玩那个彩券。
+INFO:root:[56:22] Do you know
+INFO:root:[56:22] Tom (1.0000): anyone who's won on those?
+INFO:root:[56:23] Ula (0.9999): 我玩 , 哈 ?
+INFO:root:[56:25] Tom (1.0000): Do you know anyone who's won anything on those?
+INFO:root:[56:27] Ula (1.0000): 没有。  我赢过两百。 So, I gave them, I bought $200,  然后我两百就拿回来这样。 So that was free.
+INFO:root:[56:37] Tom (1.0000): Yeah.
+INFO:root:[56:38] Ula (1.0000): 对
+INFO:root:[56:38] Tom (1.0000): , 就这样
+INFO:root:[56:39] Ula (0.9771): , 没有了。
+INFO:root:[56:40] Tom (1.0000): Yeah, I don't know. I mean, I've never known anyone who's won anything big on scratch cards either in this country. A couple of pounds. You know, like you win like £2, £5. But no, never like £10,000 or something.
+INFO:root:[56:50] Ula (1.0000): No, no, no.
+INFO:root:[56:51] Tom (1.0000): Although that would be nice.
+INFO:root:[56:53] Ula (0.9286): 又不是你的钱。
+INFO:root:Almost Anomaly: (6.220000000000255) ' 所以如果我們家在星期五或是星期六過年吃飯, 然後我們給我們的孩子紅包, 他們可以去買什麼Star, Eurostar,什麼Lottery嗎?'
+INFO:root:[56:54] Tom (1.0000): £10,000 on a scratch card. We'd buy another one of those.  你说我们是不是 ? Yeah, 如果我们赢了。
+INFO:root:[57:00] Ula (1.0000): 所以如果我们家在星期五或是星期六过年吃饭 ,  然后我们给我们的孩子红包 ,  他们可以去买什么 Star, Eurostar, 什么 Lottery 吗 ?
+INFO:root:[57:15] Tom (0.9999): Scratch cards?
+INFO:root:[57:16] Ula (1.0000): Yeah.  在英国。
+INFO:root:[57:18] Tom (0.9998): Oh, yeah.  他们可以去吗 ? They can't, no. We have to go.
+INFO:root:[57:21] Ula (1.0000): 我们一起去一个地方。
+INFO:root:[57:24] yeah, yeah.
+INFO:root:[57:24] Tom (0.9327): 可以吗 ?
+INFO:root:[57:25] Ula (0.9968): What time?  星期五。
+INFO:root:[57:27] Tom (0.9994): Yeah, what time?
+INFO:root:[57:28] Ula (1.0000): 我不知道。
+INFO:root:[57:29] Tom (1.0000): It has to be before seven. Because I think the draw is at seven.
+INFO:root:[57:32] Ula (1.0000): 星期六呢 ?
+INFO:root:[57:33] Tom (1.0000): Well, it depends. Yeah, if, well, there's like loads of draws, but like Wednesday is a Euro, the Euro millions, and then Friday is like the lottery, normal one, the national one, and then there's something else.
+INFO:root:[57:44] Ula (0.9998): 星期六 ,  可以吗 ?
+INFO:root:[57:45] Tom (1.0000): You keep saying it. Yeah.  星期六可以啊 .
+INFO:root:[57:48] Ula (0.9998): 星期六可以。
+INFO:root:[57:49] Tom (1.0000): But yeah, you just, you don't have to buy it on the day. You can just say which one you want. So it can be for next Wednesday. But if we want it instant,
+INFO:root:[57:57] Ula (0.9999): just buy
+INFO:root:[57:58] Tom (0.9999): scratch cards.
+INFO:root:[57:58] Ula (1.0000): 你们有吗 ?  在哪里 ?
+INFO:root:[58:01] Tom (1.0000): Next to the lottery tickets.
+INFO:root:[58:03] Ula (1.0000): 有哦。
+INFO:root:[58:04] Tom (0.9986): 我不知道。 There's like loads of them, rolls and rolls.
+INFO:root:[58:07] Tom (1.0000): Some of them are two pounds, some of them one pound, some of them five pounds.
+INFO:root:[58:10] Ula (1.0000): Okay, okay. Yeah, that's what I want.
+INFO:root:[58:11] Tom (1.0000): Yeah, buy scratch cards.  刮刮乐。
+INFO:root:[58:15] Ula (0.9977): Which is called guagua le.
+INFO:root:[58:16] Tom (1.0000): Yeah. And any money they win, we get. Okay. They get the fun of guagua. They can guagua le. But we get the qian qian ah. But what are they going to do with 500,000 pounds if they win it?
+INFO:root:[58:32] Ula (0.9972): If they win the
+INFO:root:[58:34] Tom (0.9999): jackpot, like maxi, sorry, the little one.
+INFO:root:[58:37] Ula (1.0000): Yeah.
+INFO:root:[58:38] Tom (1.0000): Wins the lottery. Oh, he went to private school. Yeah. All three of them. All three of them would go immediately.
+INFO:root:[58:45] Ula (1.0000): 这个钱给你去 private school. I was like, what?  我们的钱呢 ? 为什么 ?
+INFO:root:[58:51] Tom (1.0000): Are you punishing me?
+INFO:root:[58:53] Ula (1.0000): No.
+INFO:root:[58:54] Tom (0.9997): Private school.  他们不懂 . It's like, pack up, you're changing schools. What?
+INFO:root:[58:58] Ula (0.9998): Yeah.
+INFO:root:[58:59] Tom (0.9999): You did it to yourself. Yeah, no, that's a good point. Actually, they would go. How long would that last though? It's going to be like 7,000, 6,000 pound a year each.
+INFO:root:[59:11] Ula (1.0000): 你要 cash out, 对不对 ?
+INFO:root:[59:12] Tom (1.0000): No. But the cost of the children to go there is like six or seven thousand pounds a year or something. Twelve thousand pounds a year. Right. Twenty four. Thirty six. Thirty six thousand pounds a year. That's quite a lot. Actually, that's that's like.
+INFO:root:[59:26] Ula (1.0000): One year only.
+INFO:root:[59:27] Tom (1.0000): No, no, no, no, no. The jackpot's like five hundred thousand.
+INFO:root:[59:31] Ula (1.0000): Jackpot is too difficult.
+INFO:root:[59:35] Tom (1.0000): Thirteen years. Yeah, that'll take them all the way through school. That five hundred thousand would take them all the way through private school the whole time. Amazing. That's the plan. Bang, they go through.
+INFO:root:[59:45] Ula (1.0000): Yeah.
+INFO:root:[59:46] Tom (1.0000): They get an amazing education. They come out like this, speaking like this. Hello. And we're like, who are you?
+INFO:root:[59:54] Ula (1.0000): 你谁呀 ?
+INFO:root:[59:55] Tom (1.0000): They call me Maximilian.  好好笑。 Maximilian Pounds. I don't know who you are.  好好笑。 Okay, that's the plan, right? Private school for all of them, right? Good point.
+INFO:root:[60:08] Ula (0.9959): 如果
+INFO:root:[60:08] Tom (0.9995): , 如果。 Done, deal.
+INFO:root:[60:09] Ula (1.0000): 好 , 我们要刮刮乐。  我们要去买刮刮乐。
+INFO:root:[60:12] Tom (1.0000): How many?
+INFO:root:[60:12] Ula (0.9977): How
+INFO:root:[60:13] Tom (1.0000): many?
+INFO:root:[60:14] Ula (0.9996): Depends. I don't know.
+INFO:root:[60:16] Tom (0.9999): How much they've got, basically, just all of it.
+INFO:root:[60:18] Ula (1.0000): It's all I think maybe five pounds. Five pounds.
+INFO:root:[60:23] Tom (1.0000): Instead of a toy?
+INFO:root:[60:24] Ula (1.0000): No, we give them red envelopes. Depends on how much we want to give them.
+INFO:root:[60:29] Tom (1.0000): From us, personally?
+INFO:root:[60:30] Ula (0.9998): Yeah.
+INFO:root:[60:30] Tom (1.0000): Okay.
+INFO:root:[60:31] Ula (1.0000): Then they can choose by themselves. Like they want a gift or they want to have fun.
+INFO:root:[60:37] Tom (1.0000): Okay.
+INFO:root:[60:38] Ula (0.9991): Yeah, look at them.
+INFO:root:[60:39] Tom (1.0000): They cannot come just like, you know, I just want to warn you about this. there are some shops that you go into and if we're like which ones do you want they will not let you buy them
+INFO:root:[60:46] Ula (1.0000): oh no
+INFO:root:[60:48] Tom (1.0000): they will not let you buy them because you're supplying underage people with uh
+INFO:root:[60:53] Ula (0.9946): but dad and mom
+INFO:root:[60:55] Tom (0.9718): are together I don't honestly that's how it used to be you can't so we just have to go in and just choose for them
+INFO:root:[61:01] Ula (1.0000): so in Taiwan they're too free right?
+INFO:root:[61:05] Tom (0.9995): in
+INFO:root:[61:06] Ula (1.0000): Taiwan
+INFO:root:[61:06] Tom (1.0000): they don't care there's no consequences they don't care right?
+INFO:root:[61:12] Ula (1.0000): 但在英国的后果是什么 ?
+INFO:root:[61:14] Tom (1.0000): It's gambling. And you have to be 18 to gamble. Or 21, I can't remember.
+INFO:root:[61:20] Ula (1.0000): 所以连爸爸妈妈在旁边 , 他们都不可以。
+INFO:root:[61:22] Tom (0.9999): As far as I remember, if you look like you're supplying a younger person with scratch cards, they won't let you buy. In some places, legally, they're not allowed to do it. But some people are like, nah, you're just your mom and dad. I'll tell you what we could do. We could go, which one should we get? Which one shall we get? Because it's implied it's for you, but they're helping you choose the design. Do you know what I mean? Instead of saying, which one do you want? If you want it, I'm buying it for you.
+INFO:root:[61:55] Ula (1.0000): Okay, so we're going in. And then I'll say, everybody, shh,
+INFO:root:[61:59] Tom (0.9999): shut your mouth.
+INFO:root:[62:00] Ula (1.0000): And then dad will talk.
+INFO:root:[62:01] Tom (0.9997): Yeah, he doesn't let me speak.
+INFO:root:[62:02] Ula (0.9998): Yeah, my dad will talk.
+INFO:root:[62:04] Tom (0.9998): Yeah, and I'll go, okay, I'll tell you what, guys. Which one should we get? This is so bad, though. It's like encouraging your children to gamble. gamble. They'll frown upon
+INFO:root:[62:11] Ula (1.0000): us. I'll just go
+INFO:root:[62:15] Tom (1.0000): pink. I'll pick some.
+INFO:root:[62:18] Ula (1.0000): They
+INFO:root:[62:20] Tom (1.0000): will think I've got a problem. Because I'll be like, can I have five number threes, please? And then three number sevens and I'll have eight number twos and then four and I've got reels of them. Okay, this guy's got a bit of a gambling problem.
+INFO:root:[62:40] Ula (1.0000): 这是文化 , 这就是我们的文化。
+INFO:root:[62:42] Tom (0.9848): What can
+INFO:root:[62:42] Ula (0.9999): they do?
+INFO:root:[62:43] Tom (0.9646): What can they do? Nothing.
+INFO:root:[62:45] Ula (1.0000): 因为这是我的 memory, so I want to give my kids my memory as well.
+INFO:root:[62:50] Tom (0.9999): No, this is more, it's like my problem being judged. I'm happy, I'll go and do it. I don't care, I'll go and do it.
+INFO:root:[62:56] Ula (1.0000): 然后你带你的老婆跟孩子 ,
+INFO:root:[62:57] Tom (0.9999): 然后出来有这么多彩券。 Scratch cards, yeah. Come on guys, let's go gamble. I just spent our weekly food budget. Let's go.
+INFO:root:[63:10] Ula (1.0000): 没有这么多钱啦。
+INFO:root:[63:12] Tom (1.0000): Well, I don't know. I'm thinking, you know, if we give them like £20 each.
+INFO:root:[63:14] Ula (1.0000): Yeah.
+INFO:root:[63:15] Tom (1.0000): You know, that's...
+INFO:root:[63:17] Ula (0.9975): 五磅 , 五磅 , 五磅。
+INFO:root:[63:18] Tom (1.0000): You could buy like some scratch cards, like the big ones that have the bigger, like, you know, the bigger prizes. They're about £5 each. They get four each.
+INFO:root:[63:24] Ula (0.9990): Oh.
+INFO:root:[63:25] Tom (1.0000): That will do, won't it?
+INFO:root:[63:27] Ula (1.0000): 那是多少钱 ?
+INFO:root:[63:28] Tom (0.9999): I'm sorry?
+INFO:root:[63:29] Ula (1.0000): 那是多少钱 ?
+INFO:root:[63:30] Tom (1.0000): They're about £5 each. But what's the jackpot?
+INFO:root:[63:33] Ula (1.0000): 不是 , 不是。
+INFO:root:[63:34] Tom (0.9974): 你说一张就五磅喔 ? One is like £5, yeah.
+INFO:root:[63:37] Ula (1.0000): 那就一张而已啊。
+INFO:root:[63:38] Tom (0.9992): No, you give them £20.
+INFO:root:[63:39] Tom (0.9992): They're going to
+INFO:root:[63:40] Ula (0.9851): buy
+INFO:root:[63:40] Tom (1.0000): toys. They're going to buy
+INFO:root:[63:43] Ula (1.0000): toys.
+INFO:root:[63:43] Tom (0.9884): I
+INFO:root:[63:44] Ula (1.0000): think maybe scratch cards. For them, they think there's nothing. This is my memory. Do you understand? They'll think, Where are my toys?
+INFO:root:[64:01] Tom (0.9842): One is
+INFO:root:Almost Anomaly: (6.265000000001092) ' You can either get a big one for big money, like £500, or you can get like a £1 one, where you win like £10,000.'
+INFO:root:[64:05] Ula (1.0000): enough.
+INFO:root:[64:06] Tom (1.0000): You can either get a big one for big money, like £500, or you can get like a £1 one, where you win like £10,000. Or you could win £10,000 and it's small. We could do like five of those for them. And if you win something, you can buy private school.
+INFO:root:[64:20] Ula (1.0000): So my mom used to tell me, if I went to buy Gua Gua Le, she would go with me. And if I won money, she would say, this is
+INFO:root:[64:28] Tom (0.9994): my
+INFO:root:[64:28] Ula (0.9893): pocket money. So how do we tell our kids?
+INFO:root:[64:32] Tom (0.9997): What should we say to them? If they win?
+INFO:root:[64:35] Ula (1.0000): Yeah, what is this? What is it?
+INFO:root:[64:38] Tom (0.9999): you can win money on it. You can win money on it, yeah.
+INFO:root:[64:40] Ula (1.0000): So I'm going to tell them it's gambling.
+INFO:root:[64:43] Tom (1.0000): If they win? Yeah. But they'll do it and they'll think it's just fun and they'll forget about it. Who cares? It doesn't matter. I don't think it'll have a lasting impact on... They don't understand the concept of gambling. Right?
+INFO:root:[64:58] Ula (0.9999): I think it's fun. You have to let them know this is fun. Yes.
+INFO:root:[65:02] Tom (1.0000): But the only problem is if they win, That's a problem Because that's when you get addicted
+INFO:root:[65:08] Ula (1.0000): I
+INFO:root:[65:09] Tom (1.0000): walked into a casino once I used to go to casino quite a lot And the thing that got me was I went in there and I played like a fruit machine And I put like 20 pound note in there And I won like 400 pounds Just by luck I won like 400 pounds on this machine And I thought I could do that all the time So I kept going back like every time I got paid Payday I go back to the casino I spent a couple of hundred pounds
+INFO:root:[65:32] Ula (1.0000): Oh.
+INFO:root:[65:33] Tom (0.9998): Which is silly, right?
+INFO:root:[65:35] Ula (1.0000): I know.
+INFO:root:[65:36] The
+INFO:root:[65:36] Tom (1.0000): difference is they're so small. Our little one will have no idea what's going on.
+INFO:root:[65:40] Ula (0.9947): Even if they
+INFO:root:[65:45] Tom (1.0000): win, don't say anything. Just go, oh, never mind. No, no, we buy them a toy or something. We buy them a toy anyway, right?
+INFO:root:[65:55] Ula (0.9999): Yeah, yeah.  然后换去很贵的学校。  这是你的新的学校哦。
+INFO:root:[66:03] Tom (0.9999): Anyway, all right, we should go. Because we're over an hour now. Minus the phone call, which is probably about an hour.
+INFO:root:[66:09] Ula (1.0000): 好的。
+INFO:root:[66:10] Tom (1.0000): But, woman,  爱你们。  爱你们。 Good luck with the ban, if it happens. If not, the ban, the TikTok ban. The ban, yeah. Banning it, yeah.
+INFO:root:[66:21] Ula (0.9979): TikTok,
+INFO:root:[66:22] Tom (0.9998): ban it.  小老鼠。
+INFO:root:[66:24] Ula (1.0000): 小红薯。
+INFO:root:[66:25] Tom (0.6398): 小老鼠。
+INFO:root:[66:27] Tom (1.0000): 今天会玩叫小老鼠  小红包  小老鼠  小红包  好啦  小红鼠 Good luck with all that If it doesn't happen, cool If it does, cool We'll see you on the other side anyway Because it doesn't really affect this podcast Have a fantastic weekend
+INFO:root:[66:44] Ula (0.9997): 没错
+INFO:root:[66:44] Tom (0.9975): 我们爱你们  爱你们
+INFO:root:[66:46] Ula (1.0000): 周末再见  不是周末再见  周末愉快  下次见
+INFO:root:[66:51] Tom (0.9997): 拜拜 Bye-bye. Bye. Bye. you
+INFO:root:[66:52] you.
+INFO:root:Transcription finished in 01:00:49

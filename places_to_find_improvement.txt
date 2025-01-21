@@ -1,0 +1,23 @@
+1.  This guy has a "sharp change in audio" dector.
+https://github.com/OverLordGoldDragon/StackExchangeAnswers/blob/main/SignalProcessing/Q87355%20-%20audio%2C%20algorithms%20-%20Detecting%20abrupt%20changes/test_algo.py
+
+
+2. Using Libraries:
+pyannote-audio: A powerful library specifically for speaker diarization and other audio processing tasks.
+Python
+
+
+    from pyannote.audio import Pipeline
+
+    pipeline = Pipeline.from_pretrained("pyannote/speaker-diarization")
+    diarization = pipeline("audio.wav")
+
+    for turn, _, speaker in diarization.itertracks(yield_label=True):
+        print(f"Speaker {speaker}: {turn.start:.2f}s - {turn.end:.2f}s")
+
+py-webrtcvad: A Python interface to the WebRTC Voice Activity Detector, which can be used for detecting speech segments within an audio file.
+Or maybe the silero equivalent?  Still, I don't know if just "detecting the presence" of speech will solve for "who"
+
+3. Building your own model:
+SincNet and LSTM/Transformer: You can train your own model using SincNet for feature extraction and LSTM or Transformer for speaker change detection.
+

@@ -582,7 +582,7 @@ class TranscriptRow(RecycleDataViewBehavior, BoxLayout):
         return super().refresh_view_attrs(rv, index, data)
     
     def from_dict(self, line):
-        self.row_id = line.get('id', line.get('row_id', ''))
+        self.row_id = str(line.get('id', line.get('row_id', '')))
         self.speaker = line['speaker']
         self.speaker_confidence = line['speaker_confidence']
         self.original_start = line['original_start']
@@ -912,7 +912,7 @@ class TranscriptScreen(Widget):
         # and times.
         s1 = row['speaker'].strip() if row else None
         s2 = next_row['speaker'].strip() if next_row else None
-        if next_row and row and s1 == s2 or (len(s1) == 0 or len(s2) == 2):
+        if next_row and row and (s1 == s2 or not s1 or not s2):
             ### If you're collapsing back something that you just split,
             ### you probably don't want the text duplicated, so... if
             ### both lines of text are identical, we'll just keep one.
@@ -967,10 +967,11 @@ class TranscriptScreen(Widget):
             # If we see the "id" in the itm, 
             # it's the old format.  So, we'll 
             # convert from it.
-            if itm.get('id', None):
-                itm['row_id'] = itm['id']
+            if itm.get('id', None) is not None:
+                itm['row_id'] = ("" + str(itm['id']))
                 itm.pop('id', None)
-
+            elif itm.get('row_id', None) is not None:
+                itm['row_id'] = ("" + str(itm['row_id']))
             # If we see "original", it's the old
             # time format, so we'll convert from it
             if itm.get('original', None):
@@ -1002,7 +1003,7 @@ class TranscriptScreen(Widget):
         self.episode_edit.text = str(transcript.get('episode',''))
         self.edit_row.audio_file = transcript.get("AudioFile", '')
         self.lines = [ conv(itm) for itm in transcript["transcription"] ] if transcript["transcription"] else []
-
+        print
         selected_index = None
         scroll_height = 0
         ndx = 0
@@ -1079,7 +1080,6 @@ class TranscriptScreen(Widget):
             # segment that is trash but gets translated into a hallucinated
             # string.  We're going to toss them.
             episode, flat_subs = get_segments(
-                vid, 
                 tscript, 
                 audio, 
                 episode=episode, 

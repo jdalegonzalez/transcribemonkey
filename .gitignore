@@ -22,6 +22,8 @@ transcripts/*.json
 transcripts/*.json.*
 transcripts/*.bak
 transcripts/*.docx
+transcripts/audio_samples/*
+models/*
 audio_out/
 chunked-audio/
 speakerbox/
