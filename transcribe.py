@@ -1,7 +1,5 @@
 #! python
-import argparse
 import os
-import re
 import json
 import math
 import logging
@@ -10,7 +8,6 @@ import datetime
 import string
 import sys
 from enum import Enum
-from collections import UserDict
 
 from word2number import w2n
 
@@ -23,13 +20,8 @@ from word2number import w2n
 
 from googletrans import Translator
 
-from typing import Optional, TypedDict, Union, Iterable
+from typing import Optional, Union
 
-from xpinyin import Pinyin
-from hanziconv import HanziConv
-import jieba
-
-import numpy as np
 from transformers import pipeline, Pipeline
 
 import stable_whisper
@@ -39,64 +31,23 @@ import whisper
 
 import torch
 
-import soundfile as sf
-
 from pytubefix import YouTube
-from pytubefix.cli import on_progress
 
 from docxtpl import DocxTemplate
 
-class PropertyDict(UserDict):
-    def __init__(self, dict=None, /, **kwargs):
-        super().__init__(dict, kwargs=kwargs)
-
-    def __getattr__(self, key):
-        if key in self.data: return self.data[key]
-        else: raise AttributeError(key)
-
-    def __setattr__(self, key, value):
-        if key == 'data':
-            super().__setattr__(key, value)
-        else:
-            self.data[key] = value
-
-    def __getstate__(self):
-        return self.data
-
-    def __setstate__(self, state):
-        self.data = state
-
-    def default(o):
-        if issubclass(type(o),PropertyDict): return o.data
-        raise TypeError(f'Object of type {o.__class__.__name__} is not JSON serializable')
-
-class WhisperSegment(PropertyDict):
-
-    def __init__(self, dict=None, /, **kwargs):
-        super().__init__(dict, kwargs=kwargs)
-        self._words = None
-        self._text = None
-
-    def __getattr__(self, key):
-        if key == 'words':
-            if not self._words: self._words = [WhisperSegment(w) for w in self.data['words']]
-            return self._words
-        elif key == 'text':
-            if not self._text: self._text = "".join([w.word for w in self.words])
-            return self._text
-        return super().__getattr__(key)
-
-    def __setattr__(self, key, value):
-        if key == 'words':
-            self._text = None
-            self._words = [WhisperSegment(w) for w in value]
-        else:
-            super().__setattr__(key, value)
-
-class TranscribeMethods(Enum):
-    FASTER_WHISPER = 'faster-whisper'
-    STABLE_WHISPER = 'stable-whisper'
-    HUGGING_FACE = 'hugging_face-whisper'
+from subsegment import SubSegment
+from transcribe_args import get_arguments
+from utils import (
+    AudioType,
+    DEFAULT_PUNCTUATION,
+    hallucinations,
+    PropertyDict,
+    SegmentDict,
+    SpeakerGuess,
+    to_minutes_seconds,
+    TranscriptionType,
+    WhisperSegment
+)
 
 ##### Constants #####
 DEVICE = "cpu"
@@ -109,9 +60,6 @@ SWITCH_SPEAKER_CUTOFF = .70 # 0 - 1
 TOO_SHORT_TO_GUESS_SECONDS = .2
 TOO_SHORT_TO_BE_REAL_SECONDS = .1
 MIN_PROBABILITY_TO_INCLUDE = .4
-
-# punctuation:str="\"'.。,，!！?？:：”)]}、"
-DEFAULT_PUNCTUATION = "\"'.。!！?？:：”)]}、" # no comma
 
 NO_GUESS = {'label': "", 'score': 0}
 HF_MODELS = {
@@ -129,39 +77,14 @@ HF_MODELS = {
     "large": "openai/whisper-large-v3"
 }
 
-# These are intentionally repetitive because I'm
-# trying to make sure I don't kill something by
-# accident so I want long, specific strings.
-# Maybe later I'll look at patters for some of
-# them.
-hallucinations = [
-    "Subtitles by the Amara.org community you.",
-    "Subtitles by the Amara.org community",
-    "请不吝点赞 订阅 转发 打赏支持明镜与点点栏目",
-    "请点击订阅点赞。",
-    "曲 李宗盛嗯。 ",
-    "优优独播剧场——YoYo Television Series Exclusive",
-    "优独播剧场——YoYo Television Series Exclusive",
-    "场——YoYo Television Series Exclusive",
-    "ING PAO CANADAING PAO TORONTO",
-]
-
 translator = Translator()
-pinyin_obj = Pinyin()
-
-# There is no real reason to put this 'priming' request here.
-# I'm doing it because jieba logs some stuff on the first 
-# request you make to it and I want it to be before all the
-# stuff I log.
-jieba.lcut("好大家好")
 
 prompt_str = \
 "好大家好. 我是 Ula. 我说中文。 "\
 "好啊！And I'm Tom and I speak both 英文 and 中文。 " \
 "Our podcast is called Mandarin Monkey. You can find us at mandarinmonkey.com. " \
 "Uh, well, yeah.  This is episode 381!  第三百八十一集！" \
-"我很开心啊。 I'm very happy too.  Yeah.  We went to Pier thirty-nine, just to eat something."
-
+"I'm 很开心啊。 I'm very happy too.  Yeah.  We went to Pier Thirty-Nine, just to eat something."
 
 ## Things I could maybe tune...
 ## beam_size: 1,
@@ -186,25 +109,10 @@ DEFAULT_TRANSCRIBE_KWARGS = {
 
 #####################
 
-class SpeakerGuess(TypedDict):
-    score: float
-    label: str
-
-class SegmentDict(TypedDict):
-    row_id: str
-    original_start: float
-    original_end: float
-    modified_start: float
-    modified_end: float
-    text: str
-    speaker: str
-    speaker_confidence: float
-    selectable: bool
-    selected: bool
-    export: bool
-
-AudioType = tuple[np.ndarray, float]
-TranscriptionType = tuple[Iterable[Segment], TranscriptionInfo]
+class TranscribeMethods(Enum):
+    FASTER_WHISPER = 'faster-whisper'
+    STABLE_WHISPER = 'stable-whisper'
+    HUGGING_FACE = 'hugging_face-whisper'
 
 def audio_filename(file_or_path: str, video_id: str):
     if file_or_path.endswith('.mp4'):
@@ -220,449 +128,11 @@ def transcript_json_name(file_or_path: str, video_id: str):
         result = os.path.join(file_or_path, f'{video_id}.transcript.json')
     return result
 
-def to_minutes_seconds(seconds:float) -> str:
-    secs = round(seconds)
-    minute_part = secs // 60
-    second_part = secs % 60
-    return f'{minute_part:02}:{second_part:02}'
-
-chinese_characters_range = '\u3002-\u9fff'
-chinese_character_re = re.compile(f'[{chinese_characters_range}]')
-def contains_chinese(text:str) -> bool:
-    return chinese_character_re.search(text) is not None
-
-def combine_words(words:list[str]):
-    was_chinese = False
-    text = ""
-    pinyin = ""
-    pinyin_pfx = ""
-    punc = DEFAULT_PUNCTUATION + ","
-    for word in words:
-        is_chinese = contains_chinese(word)
-        prefix = " " if text and word != ' ' and was_chinese != is_chinese else ""
-        text += (prefix + word)
-        was_chinese = is_chinese
-        pinyin_pfx = " " if pinyin and word not in punc else ""
-        pinyin += (pinyin_pfx + pinyin_obj.get_pinyin(word, '', tone_marks="marks")) if is_chinese \
-            else (prefix + word)
-        pinyin_pfx = " "
-
-    return (text,pinyin)
-
-def separate_english(text):
-    if contains_chinese(text):
-        return combine_words(jieba.lcut(text))
-    return (text, "")
-
-# anomalous words are very long/short/improbable
-def word_anomaly_score(word: Word) -> float:
-    probability = word.probability
-    duration = word.end - word.start
-    score = 0.0
-    if probability < 0.15:
-        score += 1.0
-    if duration < 0.133:
-        score += (0.133 - duration) * 15
-    if duration > 2.0:
-        score += duration - 2.0
-    return score
-
-def is_anomaly(score, num_words, text:Union[str, list[Word]]):
-    # This was the old score
-    #return score >= 3 or score + 0.01 >= len(words)
-    if score > 6 and score <= 7:
-        txt = text if type(text) == str else " ".join([w.word.strip() for w in text])
-        logging.info(f"Almost Anomaly: ({score}) '{txt}'")
-    return score > 7 or score + 0.01 >= num_words
-
-def is_segment_anomaly(segment: Segment) -> bool:
-    if segment is None or not segment.words: return False
-    words = [w for w in segment.words if w.word.strip() and w.word not in DEFAULT_PUNCTUATION + ","]
-    words = words[:8]
-    score = sum(word_anomaly_score(w) for w in words)
-    return is_anomaly(score, len(words), words)
-
-class SubSegment():
-    """
-    When faster-whisper segments audio, in many cases, the segments span
-    multiple speakers - which isn't ideal for transcription.  So, we're
-    going to split the segments on punctuation - assuming that for the
-    most part, we'll get complete sentences from each speaker.  These
-    SubSegment classes capture those sentences.
-    """
-    def __init__(self,
-        id: str,
-        start: float,
-        audio: AudioType,
-        end: Optional[float] = None,
-        text: Optional[str] = "",
-        speaker: Optional[str] = "",
-        speaker_confidence: Optional[float] = None,
-        selectable: Optional[bool] = True,
-        selected: Optional[bool] = False,
-        export: Optional[bool] = True
-    ):
-        self.id: str = id
-        self._start: float = float(start)
-        self._end: float = float(end) if end is not None else self._start
-        self.text: str = text
-        self.pinyin: str = ''
-        self.translation: str = ''
-        self.audio: AudioType = audio
-        self.original_speaker: Optional[str] = speaker
-        self.speaker: Optional[str] = speaker
-        self.speaker_confidence: Optional[float] = speaker_confidence
-        self.selectable = selectable
-        self.selected = selected
-        self.export = export
-        self._anomaly_score = 0
-
-    def from_whisper_segment(audio: AudioType, segment:WhisperSegment):
-        return SubSegment(
-            id=str(segment.id),
-            audio=audio,
-            start=segment.start,
-            end=segment.end,
-            text=segment.text
-        )
-    
-    def start_segment(audio: AudioType):
-        return SubSegment(
-            id='0.0', 
-            start=0,
-            audio=audio
-        )
-    
-    @property
-    def speaker_guess(self):
-        return SpeakerGuess(score=self.speaker_confidence, label=(self.speaker or "").lower())
-
-    @property
-    def start(self):
-        return self._start
-    @start.setter
-    def start(self, value):
-        self._start = float(value)
-
-    @property
-    def end(self):
-        return self._end
-    @end.setter
-    def end(self, value):
-        self._end = float(value)
-
-    @property
-    def duration(self):
-        return self._end - self._start
-
-    def add_word(self, word:Word) -> None:
-        score = word_anomaly_score(word)
-        text=word.word.replace("Yula", "Ula").replace("Eula", "Ula").replace("Yulo", "Ula")
-        self.text += text
-        self.end = word.end
-        self._anomaly_score += score    
-
-    def is_anomaly(self, punc = DEFAULT_PUNCTUATION + ",") -> bool:
-        num_words = word_count(self.text, punc=punc)
-        return is_anomaly(self._anomaly_score, num_words, self.text)
-    
-    def anomaly_score(self):
-        return self._anomaly_score
-    
-    def from_segment(audio: AudioType, seg:Segment, is_clips:bool=False):
-        ret = SubSegment(
-            audio=audio,
-            id=seg.id,
-            start=seg.start,
-            end=seg.end,
-            text=seg.text
-        )
-        ret.finalize()
-        return ret
-    
-    def to_dict(self) -> SegmentDict:
-        result = {}
-        result['row_id'] = self.id
-        result['original_speaker'] = self.original_speaker
-        result['speaker'] = self.speaker
-        result['speaker_confidence'] = self.speaker_confidence
-        result['original_start'] = self.start
-        result['original_end'] = self.end
-        result['modified_start'] = self.start
-        result['modified_end'] = self.end
-        result['text'] = HanziConv.toSimplified(self.text.strip())
-        result['pinyin'] = self.pinyin
-        result['translation'] = self.translation
-        result['selectable'] = self.selectable
-        result['selected'] = self.selected
-        result['export'] = self.export
-
-        return result
-
-    def finalize(self, translate: bool=False):
-
-        self.text = HanziConv.toSimplified(self.text.strip())
-
-        for hal in hallucinations:
-            if self.text.endswith(hal):
-                self.text = self.text[:-len(hal)]
-                break
-
-        text, pinyin = separate_english(self.text)
-        self.text = text.strip()
-
-        if translate:
-            self.pinyin = pinyin.strip()
-            self.translation = translate(self.text, src='zh-cn', dest='en')
-
-    def set_speaker(self, guess:SpeakerGuess):
-        self.original_speaker = guess['label'].capitalize()
-        self.speaker = self.original_speaker
-        self.speaker_confidence = guess['score']
-
-
-    def slice_spectrogram(audio:AudioType, start: float, end:float, video_id: str = "") -> None:
-        import librosa
-        import librosa.display
-        import matplotlib
-        import matplotlib.pyplot as plt
-        
-        add_chroma = False
-        color_bars = False
-        nrows = 3 if add_chroma else 2
-
-        fig, ax = plt.subplots(nrows=nrows, ncols=1, sharex=True)
-
-        raw, sr = SubSegment.slice_audio(audio, start, end)
-        #raw, sr = audio
-
-        # Standard spectrogram
-        D = librosa.stft(raw)  # STFT of y
-        S_db = librosa.amplitude_to_db(np.abs(D), ref=np.max)
-        img1 = librosa.display.specshow(S_db, x_axis='time', y_axis='log', ax=ax[0])
-        ax[0].set(title='STFT (log scale)')
-
-        # Compute the mel spectrogram
-        S = librosa.feature.melspectrogram(y=raw, sr=sr)
-        M_db = librosa.power_to_db(S, ref=np.max)
-        img2 = librosa.display.specshow(M_db, x_axis='time', y_axis='mel', ax=ax[1])
-        ax[1].set(title='Mel')
-
-        # Compute the chroma
-        if add_chroma:
-            chroma = librosa.feature.chroma_cqt(y=raw, sr=sr)
-            img3 = librosa.display.specshow(chroma, x_axis='time', y_axis='chroma', ax=ax[2])
-            ax[2].set(title='Chroma')
-
-        # To eliminate redundant axis labels, we'll use "label_outer" on all subplots:
-        for ax_i in ax: ax_i.label_outer()
-
-        # And we can share colorbars:
-        if color_bars: fig.colorbar(img1, ax=[ax[0], ax[1]], format='%+2.0f dB')
-
-        # Or have individual colorbars:
-        if add_chroma and color_bars: fig.colorbar(img3, ax=[ax[2]])
-
-        # We can then even do fancy things like zoom into a particular time and frequency
-        # region.  Since the axes are shared, this will apply to all three subplots at once.
-        #ax[0].set(xlim=[start, end])
-
-        # Display the spectrogram
-        if video_id: fig.canvas.manager.set_window_title(video_id)
-
-        # This little trick allows us to have the labels start from
-        # the "start" value rather than 0
-        class Fmt(matplotlib.ticker.StrMethodFormatter):
-            def __call__(self, x, pos=None):
-                return self.fmt.format(x=(x+start), pos=pos)
-
-        ax[0].margins(x=0)
-        ax[0].minorticks_on()
-        ax[0].xaxis.set_major_formatter(Fmt('{x:.2f}'))
-
-        plt.show()
-        plt.close()
-
-    def slice_audio(audio:AudioType, start:float, end:float) -> AudioType:
-        """
-        Class function for slicing a piece of audio given a start and stop.
-        There is an instance version that operates on an instance's start, stop
-        and audio but this static version lets a caller get a chunk of audio
-        without creating an instance of the class.
-        """
-        audio_data, sr = audio
-        result = audio_data[int(start * sr):int(end * sr)]
-        return result, sr
-
-    def spectogram(self, title="Spectrogram") -> None:
-        return SubSegment.slice_spectrogram(self.audio, self.start, self.end, title=title)
-    
-    def slice(self) -> AudioType:
-        """
-        Returns the section of audio that this SubSegment represents
-
-        :return: the audio snippet as tuple(ndarray, sample_rate)
-        """
-        return SubSegment.slice_audio(self.audio, self.start, self.end)
-    
-    def static_file_dest(yt_id: str, seg_id: str, path:str="") -> str:
-        file_name = f'{yt_id}.{seg_id}.wav'
-        return os.path.join(path, file_name)
-
-    def file_dest(self, yt_id: str, path:str=""):
-        return SubSegment.static_file_dest(yt_id, self.id, path=path)
-    
-    def save_audio_slice(dest: str, audio:AudioType, start: float, end: float) -> None:
-        audio_slice, sr = SubSegment.slice_audio(audio, start, end)
-        sf.write(dest, audio_slice, sr)
-
-    def save_audio(self, yt_id: str, path:str=""):
-        dest = self.file_dest(yt_id, path)
-        SubSegment.save_audio_slice(dest, self.audio, self.start, self.end)
-
-    def speaker_string(self):
-        speak_str = ""
-        if self.speaker is None:
-            speak_str = "Speaker: "
-        elif self.speaker.strip():
-            speak_str = f'{self.speaker.strip()} ({round(self.speaker_confidence, 4):.4f}): '
-        return speak_str
-
-    def __repr__(self):
-        return f'[id: {self.id}, start: {self.start}, end: {self.end}, text: "{self.text.strip()}", speaker: "{self.speaker_string()}"]'
-
-    def __str__(self):
-        return f'[{to_minutes_seconds(self.start)}] {self.speaker_string()}{self.text.strip()}'
-
 def translate(txt:str, src:str=None, dest:str=None) -> str:
     if src is None: src = 'zh-cn' if contains_chinese(txt) else 'en'
     if dest is None: dest = 'en' if src == 'zh-cn' else 'zh-cn'
     result = translator.translate(txt, src=src, dest=dest)
     return result.text
-
-def get_arguments():
-    """
-    Sets up the argument parser and grabs the passed in arguments.
-
-    :return: The parsed arguments from the command line
-    """
-    parser = argparse.ArgumentParser(
-        description="Creates a transcription of a Youtube video"
-    )
-    parser.add_argument(
-        "-a", "--annote",
-        help="Use PyAnnote for diarization",
-        dest="use_pyannote",
-        default=False,
-        action='store_true'
-    )
-    parser.add_argument(
-        "-c", "--clips",
-        help="A set of clips to request in the form of start1,stop1,start2,stop2",
-        dest="clips",
-        default=None
-    )
-    parser.add_argument(
-        "-d", "--doc", 
-        help="Create a word document from a json file.  The -t argument must also be passed.",
-        dest='word_doc',
-        default=False,
-        action='store_true'
-    )
-    parser.add_argument(
-        "-e", "--episode",
-        help="The episode number, if there is one (and you know it).",
-        dest="episode",
-        default=""
-    )
-    parser.add_argument(
-        "-g", "--segment-folder",
-        help="The root folder to put the individual audio segments.",
-        dest="audio_folder",
-        default=""
-    )
-    parser.add_argument('-k', '--kill_anomalies',
-        help="Whether or not to drop dialog that looks like a hallucination.",
-        dest='kill_anomalies',
-        default=False,
-        action='store_true'
-    )
-    parser.add_argument('--lang',
-        help="The language the audio is in, if known.",
-        dest='lang',
-        default="en"
-    )
-    parser.add_argument(
-        '-l', '--log_level',
-        help="The python logging level for output",
-        dest='log_level',
-        default="WARNING"
-    )
-    parser.add_argument(
-        "-o", "--out",
-        help="The path output audio file.  The default is ./<youtube_id>.mp4",
-        dest="filename",
-        default=""
-    )
-    parser.add_argument(
-        "-p", "--plot",
-        help="Shows the melspectorgram for a section of audio.  The clip argument must also be passed in.",
-        dest="do_plot",
-        default=False,
-        action="store_true"
-    )
-    parser.add_argument(
-        "-s", "--short",
-        help="Whether the ID is a video short or a full length video.",
-        dest="is_a_short",
-        default=False,
-        action='store_true'
-    )
-    parser.add_argument(
-        "-t", "--transcript",
-        help="If we've been asked to transcribe, this is either the path create the json with the default name or, if the argument ends in .json, the full path and name of the file.  The default name is <transcript_json>/<youtube_id>.transcription.json. If we're creating the word doc, it's the full path to the json file or the json folder.",
-        dest="transcript_json",
-        default=""
-    )
-    parser.add_argument(
-        "-w", "--whisper",
-        help="Use the whisper model instead of the faster-whisper one.",
-        dest="use_whisper",
-        default=False,
-        action='store_true'
-    )
-    parser.add_argument(
-        "-v", "--video", 
-        help="The Youtube ID for the video to be transcribed",
-        dest='video_id',
-        default=None
-    )
-
-    args = parser.parse_args()
-    if args.video_id is None and not args.word_doc:
-        parser.error("Youtube ID (-v, --video) is required.")
-
-    if args.word_doc:
-        exists = args.transcript_json and os.path.exists(args.transcript_json)
-        if not exists:
-            parser.error("A path to the json transcript (-t, --transcript) is required when generating a word doc")
-        is_file = os.path.isfile(args.transcript_json)
-        if not is_file and args.video_id is None:
-            parser.error("A full path to a json file is required when generating a doc if you don't also supply a video ID")
-        if not is_file:
-            new_file = os.path.join(args.transcript_json, f'{args.video_id}.transcript.json')
-            if not os.path.exists(new_file) or not os.path.isfile(new_file):
-                parser.error(f'The transcript {new_file} does not exist')
-            args.transcript_json = new_file
-
-    if args.do_plot and not args.clips:
-        parser.error("Clips must be specified to plot the spectogram.  Use -c '0' if you really want to do the entire file.")
-
-    if args.clips:
-        clips = [float(clip) for clip in args.clips.split(",")]
-        args.clips = clips
-
-    return args
 
 class FakeYouTube():
     def __init__(self, title:str = 'Fake Title'):
@@ -803,6 +273,46 @@ def plot_spectogram_from_file(filename: str, video_id: str, transcript: str, cli
     SubSegment.slice_spectrogram(audio, clip[0], clip[1], title=video_id)
 
     return
+
+def print_text_transcript(filename):
+    class Bcolors:
+        MAGENTA = '\033[95m'
+        WHITE = '\033[97m'
+        OKBLUE = '\033[94m'
+        OKGREEN = '\033[92m'
+        CYAN = '\033[96m'
+        WARNING = '\033[93m'
+        ENDC = '\033[0m'
+        FAIL = '\033[91m'
+        BOLD = '\033[1m'
+        ITALIC = '\033[3m'
+        UNDERLINE = '\033[4m'
+
+    e = f'{Bcolors.ENDC}'
+    b = Bcolors.BOLD
+    ft = f'{b}{Bcolors.WHITE}'
+    fs = f'{Bcolors.OKGREEN}'
+    fe = f'{Bcolors.WARNING}{Bcolors.ITALIC}'
+
+    json_data = load_transcript_from_file(filename)
+    
+    def get_start_end(data, field):
+        # Check the old format...
+        modified = data.get('modified', None)
+        source = modified if modified else data
+        key = field if modified else f'modified_{field}'
+        return source[key]
+    
+    if json_data is not None:
+        episode = json_data.get('episode', "")
+        title = json_data.get('title')
+        print(f'{ft}{title}{e}')
+        if episode: print(f'{fe}Episode: {episode}{e}')
+        for line in json_data['transcription']:
+            start = to_minutes_seconds(get_start_end(line, 'start'))
+            end = to_minutes_seconds(get_start_end(line, 'end'))
+            fp = Bcolors.BOLD + (Bcolors.CYAN if line['speaker'] == 'Tom' else Bcolors.MAGENTA)
+            print(f'{fs}{start} - {end}{e} {fp}{line['speaker']}{e}: {line['text']}')
 
 def create_word_doc(filename):
     json_data = load_transcript_from_file(filename)
@@ -1138,11 +648,6 @@ def guess_speaker(audio: AudioType, classifier: Pipeline) -> SpeakerGuess:
     raw, sr = audio
     if len(raw) < (sr * TOO_SHORT_TO_GUESS_SECONDS): return NO_GUESS
     return classifier({"sampling_rate": sr, "raw": raw}, top_k=1)[0]
-
-def word_count(txt:str, punc=DEFAULT_PUNCTUATION + ",") -> int:
-    trans = str.maketrans(str.maketrans('','',punc))
-    words = [ w for w in jieba.lcut(txt.replace("'","")) if len(w.strip().translate(trans)) ]
-    return len(words)
 
 def get_segments(
         transcript: TranscriptionType,
@@ -1523,9 +1028,13 @@ def pyannote_transcribe(audio_file:str, use_whisper:bool = False,
     for word in bag_of_words: segments[-1].words.append(word)
 
     for seg in segments:
-        if seg.speaker == "Ula" and not contains_chinese(seg.text):
+        if seg.speaker == "Ula" and not seg.contains_chinese():
             chinese_bag = words_for_pyannote_segments(model, whisper_audio, [seg], model_name, device, use_whisper, language="zh")
             put_words_in_segments(chinese_bag, [seg])
+
+    # clear gpu vram
+    del model
+    torch.cuda.empty_cache()
 
     for ndx, seg in enumerate(segments):
         # Empty segments at this point need to be collapsed.  We'll just add their time 
@@ -1536,21 +1045,14 @@ def pyannote_transcribe(audio_file:str, use_whisper:bool = False,
             else:
                 segments[ndx - 1].end = seg.end
             del segments[ndx]
-        else:
-            seg.text = separate_english(seg.text)
+
+    # Convert WhisperSegments into SubSegments to return
 
     for seg in segments:
         print(
             f'{to_minutes_seconds(seg.start)} - {to_minutes_seconds(seg.end)}  {seg.speaker}: {seg.text}'
         )
 
-    with open("./bag_of_segs.json", 'w', encoding='utf8') as stream:
-        json.dump(segments, stream, indent = 2, ensure_ascii=False, default=PropertyDict.default)
-        stream.write("\n")
-
-    # clear gpu vram
-    del model
-    torch.cuda.empty_cache()
 
 
 if __name__ == '__main__':
@@ -1568,6 +1070,9 @@ if __name__ == '__main__':
         plot_spectogram_from_file(args.filename, args.video_id, args.transcript_json, args.clips)
         quit()
 
+    if args.print_text:
+        print_text_transcript(args.transcript_json)
+        quit()
     if args.word_doc:
         saved_doc = create_word_doc(args.transcript_json)
         if saved_doc:
