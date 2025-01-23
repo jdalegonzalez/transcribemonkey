@@ -12,7 +12,7 @@ from utils import (
     AudioType,
     DEFAULT_PUNCTUATION,
     is_anomaly,
-    hallucinations,
+    HALLUCINATIONS,
     SegmentDict,
     separate_english,
     SpeakerGuess,
@@ -143,7 +143,7 @@ class SubSegment():
 
         self.text = HanziConv.toSimplified(self.text.strip())
 
-        for hal in hallucinations:
+        for hal in HALLUCINATIONS:
             if self.text.endswith(hal):
                 self.text = self.text[:-len(hal)]
                 break

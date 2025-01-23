@@ -12,13 +12,17 @@ from pytubefix import Stream
 
 from transcribe import (
     audio_from_file,
-    contains_chinese,
     get_segments,
     get_youtube_audio,
     save as save_results,
-    to_minutes_seconds,
     transcribe,
 )
+
+from utils import (
+    contains_chinese,
+    to_minutes_seconds,
+)
+
 from transcribe import translate as transcribe_translate
 from popups import LoadDialog, SaveDialog, ProgressDialog, TranslateDialog, DefaultButtonsPopup
 from transcribe_events import TranscribeEvents

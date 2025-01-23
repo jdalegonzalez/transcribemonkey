@@ -40,7 +40,7 @@ from transcribe_args import get_arguments
 from utils import (
     AudioType,
     DEFAULT_PUNCTUATION,
-    hallucinations,
+    HALLUCINATIONS,
     PropertyDict,
     SegmentDict,
     SpeakerGuess,
@@ -672,7 +672,7 @@ def get_segments(
         if quit_looping: break
 
         duration = segment.end - segment.start
-        if flat_subs and (duration < ignore_shorter_than or segment.text.strip() in hallucinations):
+        if flat_subs and (duration < ignore_shorter_than or segment.text.strip() in HALLUCINATIONS):
             logging.debug(f"IGNORING TOO SHORT: {segment.text} ({duration})")
             flat_subs[-1].end = segment.end
             continue

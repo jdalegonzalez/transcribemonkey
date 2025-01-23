@@ -25,7 +25,7 @@ DEFAULT_PUNCTUATION = "\"'.。!！?？:：”)]}、" # no comma
 # accident so I want long, specific strings.
 # Maybe later I'll look at patters for some of
 # them.
-hallucinations = [
+HALLUCINATIONS = [
     "Subtitles by the Amara.org community you.",
     "Subtitles by the Amara.org community",
     "请不吝点赞 订阅 转发 打赏支持明镜与点点栏目",
