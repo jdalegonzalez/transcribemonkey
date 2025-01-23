@@ -60,18 +60,38 @@ class PropertyDict(UserDict):
         else:
             self.data[key] = value
 
+    def __getstate__(self):
+        return self.data
+
+    def __setstate__(self, state):
+        self.data = state
+
+    def default(o):
+        if issubclass(type(o),PropertyDict): return o.data
+        raise TypeError(f'Object of type {o.__class__.__name__} is not JSON serializable')
+
 class WhisperSegment(PropertyDict):
+
     def __init__(self, dict=None, /, **kwargs):
         super().__init__(dict, kwargs=kwargs)
         self._words = None
+        self._text = None
 
     def __getattr__(self, key):
         if key == 'words':
             if not self._words: self._words = [WhisperSegment(w) for w in self.data['words']]
             return self._words
+        elif key == 'text':
+            if not self._text: self._text = "".join([w.word for w in self.words])
+            return self._text
         return super().__getattr__(key)
 
-
+    def __setattr__(self, key, value):
+        if key == 'words':
+            self._text = None
+            self._words = [WhisperSegment(w) for w in value]
+        else:
+            super().__setattr__(key, value)
 
 class TranscribeMethods(Enum):
     FASTER_WHISPER = 'faster-whisper'
@@ -136,12 +156,12 @@ pinyin_obj = Pinyin()
 jieba.lcut("好大家好")
 
 prompt_str = \
-"This is a dialog between Tom and Ula. " \
-"Tom speaks English. " \
-"Ula speaks Mandarin. " \
-"Mandarin Monkey. " \
-"- 你好妈 - Uh... em... Yeah. I'm good. 你呢. " \
-"Produce a verbatim transcription."
+"好大家好. 我是 Ula. 我说中文。 "\
+"好啊！And I'm Tom and I speak both 英文 and 中文。 " \
+"Our podcast is called Mandarin Monkey. You can find us at mandarinmonkey.com. " \
+"Uh, well, yeah.  This is episode 381!  第三百八十一集！" \
+"我很开心啊。 I'm very happy too.  Yeah.  We went to Pier thirty-nine, just to eat something."
+
 
 ## Things I could maybe tune...
 ## beam_size: 1,
@@ -153,8 +173,8 @@ prompt_str = \
 DEFAULT_TRANSCRIBE_KWARGS = {
     'language': 'en',
     'task': 'transcribe',
-    'beam_size': 1,
-    'best_of': 10,
+    'beam_size': 5,
+    'best_of': 5,
     'initial_prompt': prompt_str,
     'suppress_blank': False,
     'condition_on_previous_text': False,
@@ -216,12 +236,13 @@ def combine_words(words:list[str]):
     text = ""
     pinyin = ""
     pinyin_pfx = ""
+    punc = DEFAULT_PUNCTUATION + ","
     for word in words:
         is_chinese = contains_chinese(word)
         prefix = " " if text and word != ' ' and was_chinese != is_chinese else ""
         text += (prefix + word)
         was_chinese = is_chinese
-        pinyin_pfx = " " if pinyin and word not in DEFAULT_PUNCTUATION else ""
+        pinyin_pfx = " " if pinyin and word not in punc else ""
         pinyin += (pinyin_pfx + pinyin_obj.get_pinyin(word, '', tone_marks="marks")) if is_chinese \
             else (prefix + word)
         pinyin_pfx = " "
@@ -1328,32 +1349,16 @@ def whisper_transcribe(
     return ((res, info), (audio_waveform, sr))
 
 
-def pyannote_transcribe(audio_file:str, use_whisper:bool = False, 
-    model_name:str=MODEL_NAME,
-    device:str=DEVICE, 
-    language:str = "en"):
+def words_for_pyannote_segments(
+        model,
+        audio, 
+        segments,
+        model_name: str = MODEL_NAME, 
+        device: str = DEVICE, 
+        use_whisper:bool = False, 
+        language: str = "en"):
 
-    from pyannote.audio import Pipeline as PyAnnotePipeline
-    pipe = PyAnnotePipeline.from_pretrained(
-        "pyannote/speaker-diarization-3.1",
-        use_auth_token=get_hf_token()
-    )
-
-    pipe.to(torch.device(device))
-
-    # apply pretrained pipeline
-    pyannote_sample_rate = 44100
-
-    audio, _ = audio_from_file(audio_file, pyannote_sample_rate)
-    waveform = torch.from_numpy(audio).unsqueeze(0)
-    mapping = {"waveform": waveform, "sample_rate": pyannote_sample_rate}
-    diarization = pipe(mapping)
-   
-    model = "./transcribe-monkey"
-    classifier: Pipeline = pipeline("audio-classification", model=model, device=DEVICE)
-    whisper_audio = audio_from_file(audio_file, whisper.audio.SAMPLE_RATE)
-    audio_data, sr = whisper_audio
-
+    audio_data, sr = audio
     kwargs = dict(DEFAULT_TRANSCRIBE_KWARGS)
     kwargs['language'] = language
     info = TranscriptionInfo(
@@ -1366,57 +1371,187 @@ def pyannote_transcribe(audio_file:str, use_whisper:bool = False,
         vad_options=None        
     )
 
+    timestamps = [segments[0].start]
+    # go through the segments building 30 sec (ish) clips
+    if len(segments) > 1:
+        for seg in segments:
+            last_stamp = timestamps[-1]
+            if seg.end - last_stamp > 30: 
+                timestamps.append(seg.start)
+                timestamps.append(seg.start)    
+    timestamps.append(segments[-1].end)
+
+    kwargs['clip_timestamps'] = timestamps
     if use_whisper:
-        model = whisper.load_model(model_name, device=device, download_root=WHISPER_MODEL_DIR)
-        fp16 = False if device == "cpu" else True
-        kwargs['fp16'] = fp16
-        def t(start, end):
-            if start > -1 and end > -1: kwargs['clip_timestamps'] = [start, end]
-            results = whisper.transcribe(model=model, audio=audio_data, **kwargs)
-            segs = [WhisperSegment(seg) for seg in results['segments']]
-            return (segs, info)
+        model = whisper.load_model(
+            model_name, device=device, download_root=WHISPER_MODEL_DIR
+        )
+        kwargs['fp16'] = False if device == "cpu" else True
+        transcription = whisper.transcribe(model=model, audio=audio_data, **kwargs)
+        segs = [WhisperSegment(seg) for seg in transcription['segments']]
+        result = (segs, info)
     else:
         model = stable_whisper.load_faster_whisper(
             model_name, device=device, compute_type=COMPUTE_TYPE
         )
-        kwargs['hotwords'] = "Ula"
-        def t(start, end):
-            if start > -1 and end > -1: kwargs['clip_timestamps'] = [start, end]
-            kwargs['clip_timestamps'] = [start, end]
-            return (model.transcribe_stable(audio_data, **kwargs), info)
+        transcription = model.transcribe_stable(audio_data, **kwargs)
+        result = (transcription, info)
 
+    segments, _ = result
+    bag_of_words = []
+    def to_tdict(word):
+        return PropertyDict({
+            'word': word.word,
+            'start': word.start,
+            'end': word.end,
+            'probability': word.probability
+        })
+    
+    
+    def likely_fake(word):
+        return word.end - word.start < .22 or word.probability < .6
 
-    # At the end of every transciption, there is the chance of a hallucination. 
-    # If we try to do the transcription one segment at a time, we'll end up with 
-    # TONS of hallucinations.  So, we'll try transcribing the entire thing in one
-    # pass and then assigning to speakers/segments based on the segmentation that
-    # pyannote does.  Note, this weird "conditionally create a transcript function/closure
-    # then call it" pattern is left over from when I was trying to call it segment by
-    # segment.
-    transcript, _ = t(-1, -1)
+    def words_to_add(words):
+        # We're going to do two things.  First, 
+        # we're going to convert our list of WhisperWords into
+        # our common format - which is just a property dict
+        # Second, we're going to trim any likely hallucinations off 
+        # the back.
+        word_list = [ to_tdict(w) for w in words ]
+        while word_list and likely_fake(word_list[-1]): word_list.pop()
+        return word_list
 
-    # print the result
+    for seg in segments: bag_of_words += words_to_add(seg.words)
+
+    return bag_of_words
+
+def pyannote_transcribe(audio_file:str, use_whisper:bool = False, 
+    model_name:str=MODEL_NAME,
+    device:str=DEVICE, 
+    language:str = "en"):
+
+    # apply pretrained pipeline
+    pyannote_sample_rate = 44100
+    from pyannote.audio import Pipeline as PyAnnotePipeline
+    pipe = PyAnnotePipeline.from_pretrained(
+        "pyannote/speaker-diarization-3.1",
+        use_auth_token=get_hf_token()
+    )
+
+    pipe.to(torch.device(device))
+
+    audio, _ = audio_from_file(audio_file, pyannote_sample_rate)
+    waveform = torch.from_numpy(audio).unsqueeze(0)
+    mapping = {"waveform": waveform, "sample_rate": pyannote_sample_rate}
+    diarization = pipe(mapping)
+   
+    model = "./transcribe-monkey"
+    classifier: Pipeline = pipeline("audio-classification", model=model, device=DEVICE)
+
     g = None
-    def squish(transcript):
-        new_txt = ""
-        for row in transcript: new_txt += (" " + HanziConv.toSimplified(row.text.strip()))
-        return new_txt.strip()
+    segments = []
+    def skip_segment(previous, current) -> bool:
+        # if this segment is completely contained in the previous one
+        # and the speakers are the same, we're going to dump it.
+        if not previous: return False
+        if previous.speaker != current.speaker: return False
+        return current.start >= previous.start and current.end <= previous.end
+    
+    def append_segment(current, segments):
+        if segments and segments[-1].speaker == current.speaker:
+            segments[-1].end = current.end
+        else:
+            segments.append(current)
 
-    episode = ""
-    for turn, track, speaker in diarization.itertracks(yield_label=True):
-        last_end = turn.end
+        return segments[-1]
+
+    whisper_audio = audio_from_file(audio_file, whisper.audio.SAMPLE_RATE)
+
+    for turn, _, _ in diarization.itertracks(yield_label=True):
         w = Word(turn.start, turn.end, "X", probability=0.0)
         g, _, _ = speaker_for_clip(whisper_audio, classifier, w, g)
         label = g['label'].capitalize()
-        transcript = t(turn.start, turn.end)
-        print(f"track: {track} {turn.start} - {turn.end} speaker_{speaker} ({label})")
-        episode, flat_subs = get_segments(transcript, whisper_audio, episode=episode, is_clips=True)
-        print(squish(flat_subs))
-        print('')
+        segment = WhisperSegment({'start': turn.start, 'end': turn.end, 'speaker': label, 'words': []})
+        if segments and skip_segment(segments[-1],segment): continue
+        seg = append_segment(segment, segments)
+
+    # If we got here and somehow don't have segments, bail.
+    if not segments: return
+
+    if use_whisper:
+        model = whisper.load_model(
+            model_name, device=device, download_root=WHISPER_MODEL_DIR
+        )
+    else:
+        model = stable_whisper.load_faster_whisper(
+            model_name, device=device, compute_type=COMPUTE_TYPE
+        )
+
+    bag_of_words = words_for_pyannote_segments(model, whisper_audio, segments, model_name, device, use_whisper, language)
+    with open("./bag_of_words.json", 'w', encoding='utf8') as stream:
+        json.dump(bag_of_words, stream, indent = 2, ensure_ascii=False, default=PropertyDict.default)
+        stream.write("\n")
+
+    # For each segment, grap the words that go in the segment.  If
+    # we find a word that stradles the end of the segment, we'll
+    # assign it to the next one.
+    def should_add_to_seg(word, seg):
+        return word.start <= seg.end and word.end <= seg.end
+
+    def add_with_boundary_fixup(ndx, segments, segment, word, fix_boundary):
+        if fix_boundary and ndx and not segment.words and word.word.startswith(','):
+            last_seg = segments[ndx - 1]
+            last_word = last_seg.words.pop()
+            segment.words.append(last_word)
+
+        segment.words.append(word)
+
+    def put_words_in_segments(words, segs, fix_boundary = True):
+        for ndx, seg in enumerate(segs):
+            seg.words = []
+            while words and should_add_to_seg(words[0], seg):
+                # If the first word starts with a continuation character, and
+                # we've got a previous segment, we're going to assume that we
+                # misapplied the previous word - which sometimes happens on a segment
+                # boundary.
+                add_with_boundary_fixup(ndx, segments, seg, words.pop(0), fix_boundary)
+    
+    put_words_in_segments(bag_of_words, segments)
+
+    # Theoretically, the bag of words should be empty now.  If it isn't, just
+    # add them all to the end.
+    for word in bag_of_words: segments[-1].words.append(word)
+
+    for seg in segments:
+        if seg.speaker == "Ula" and not contains_chinese(seg.text):
+            chinese_bag = words_for_pyannote_segments(model, whisper_audio, [seg], model_name, device, use_whisper, language="zh")
+            put_words_in_segments(chinese_bag, [seg])
+
+    for ndx, seg in enumerate(segments):
+        # Empty segments at this point need to be collapsed.  We'll just add their time 
+        # to the previous next segment (or dump if it's the last)
+        if not seg.words:
+            if ndx < len(segments) - 1:
+                segments[ndx + 1].start = seg.start
+            else:
+                segments[ndx - 1].end = seg.end
+            del segments[ndx]
+        else:
+            seg.text = separate_english(seg.text)
+
+    for seg in segments:
+        print(
+            f'{to_minutes_seconds(seg.start)} - {to_minutes_seconds(seg.end)}  {seg.speaker}: {seg.text}'
+        )
+
+    with open("./bag_of_segs.json", 'w', encoding='utf8') as stream:
+        json.dump(segments, stream, indent = 2, ensure_ascii=False, default=PropertyDict.default)
+        stream.write("\n")
 
     # clear gpu vram
     del model
     torch.cuda.empty_cache()
+
 
 if __name__ == '__main__':
 

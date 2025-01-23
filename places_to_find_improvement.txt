@@ -21,3 +21,8 @@ Or maybe the silero equivalent?  Still, I don't know if just "detecting the pres
 3. Building your own model:
 SincNet and LSTM/Transformer: You can train your own model using SincNet for feature extraction and LSTM or Transformer for speaker change detection.
 
+4. Other, better? whisper versions
+   - https://github.com/mobiusml
+   - https://picovoice.ai/blog/top-speaker-diarization-apis-and-sdks/
+   - https://github.com/BUTSpeechFIT
+   - https://github.com/jasonppy/PromptingWhisper/blob/main/csasr_st.py
