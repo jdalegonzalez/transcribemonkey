@@ -63,6 +63,8 @@ class SubSegment():
             audio=audio,
             start=segment.start,
             end=segment.end,
+            speaker=segment.speaker,
+            speaker_confidence=segment.speaker_confidence,
             text=segment.text
         )
     

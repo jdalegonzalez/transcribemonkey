@@ -884,6 +884,7 @@ def words_for_pyannote_segments(
             if seg.end - last_stamp > 30: 
                 timestamps.append(seg.start)
                 timestamps.append(seg.start)    
+
     timestamps.append(segments[-1].end)
 
     kwargs['clip_timestamps'] = timestamps
@@ -930,10 +931,30 @@ def words_for_pyannote_segments(
 
     return bag_of_words
 
+def pyannote_collapse_convert_segments(audio, segments:list[WhisperSegment]) -> list[SubSegment]:
+    results = []
+    for ndx, seg in enumerate(segments):
+        # Empty segments at this point need to be collapsed.  We'll just add their time 
+        # to the previous next segment (or dump if it's the last)
+        seg.id = ndx
+        if results and not results[-1].text:
+            # We added an empty segment, so collapse this one, into the 
+            # previous one.
+            results[-1].text = seg.text
+            results[-1].end = seg.end
+        elif results and results[-1].text and not seg.text:
+            # This segment doesn't have words, so collapse it into
+            # the previous.
+            results[-1].end = seg.end
+        else:
+            results.append(SubSegment.from_whisper_segment(audio, seg))
+    return results
+
 def pyannote_transcribe(audio_file:str, use_whisper:bool = False, 
     model_name:str=MODEL_NAME,
     device:str=DEVICE, 
-    language:str = "en"):
+    language:str = "en",
+    episode: str = ""):
 
     # apply pretrained pipeline
     pyannote_sample_rate = 44100
@@ -976,7 +997,7 @@ def pyannote_transcribe(audio_file:str, use_whisper:bool = False,
         w = Word(turn.start, turn.end, "X", probability=0.0)
         g, _, _ = speaker_for_clip(whisper_audio, classifier, w, g)
         label = g['label'].capitalize()
-        segment = WhisperSegment({'start': turn.start, 'end': turn.end, 'speaker': label, 'words': []})
+        segment = WhisperSegment({'start': turn.start, 'end': turn.end, 'speaker': label, 'speaker_confidence': g['score'], 'words': []})
         if segments and skip_segment(segments[-1],segment): continue
         seg = append_segment(segment, segments)
 
@@ -1036,23 +1057,9 @@ def pyannote_transcribe(audio_file:str, use_whisper:bool = False,
     del model
     torch.cuda.empty_cache()
 
-    for ndx, seg in enumerate(segments):
-        # Empty segments at this point need to be collapsed.  We'll just add their time 
-        # to the previous next segment (or dump if it's the last)
-        if not seg.words:
-            if ndx < len(segments) - 1:
-                segments[ndx + 1].start = seg.start
-            else:
-                segments[ndx - 1].end = seg.end
-            del segments[ndx]
+    results = pyannote_collapse_convert_segments(whisper_audio, segments)
 
-    # Convert WhisperSegments into SubSegments to return
-
-    for seg in segments:
-        print(
-            f'{to_minutes_seconds(seg.start)} - {to_minutes_seconds(seg.end)}  {seg.speaker}: {seg.text}'
-        )
-
+    return (episode, results, whisper_audio)
 
 
 if __name__ == '__main__':
@@ -1061,11 +1068,6 @@ if __name__ == '__main__':
 
     logging.basicConfig(level=args.log_level.upper())
 
-    if args.use_pyannote:
-        audio_file = audio_filename(args.filename, args.video_id)
-        pyannote_transcribe(audio_file, args.use_whisper, language=args.lang)
-        quit()
-
     if args.do_plot:
         plot_spectogram_from_file(args.filename, args.video_id, args.transcript_json, args.clips)
         quit()
@@ -1073,6 +1075,7 @@ if __name__ == '__main__':
     if args.print_text:
         print_text_transcript(args.transcript_json)
         quit()
+
     if args.word_doc:
         saved_doc = create_word_doc(args.transcript_json)
         if saved_doc:
@@ -1087,18 +1090,18 @@ if __name__ == '__main__':
 
     start_trans = datetime.datetime.now()
 
-    if args.use_whisper:
-        transcript, audio = whisper_transcribe(audio_file, language=args.lang, clips=args.clips)
+    if args.use_pyannote:
+        episode, flat_subs, audio = pyannote_transcribe(audio_file, args.use_whisper, language=args.lang, episode=args.episode)
     else:
-        transcript, audio = transcribe(audio_file, language=args.lang, clips=args.clips)
-    
-    episode, flat_subs = get_segments(
-        transcript,
-        audio,
-        episode=args.episode,
-        is_clips=(args.clips is not None and args.clips),
-        kill_anomalies=args.kill_anomalies
-    )
+        tfunc = whisper_transcribe if args.use_whisper else transcribe
+        transcript, audio = tfunc(audio_file, language=args.lang, clips=args.clips)
+        episode, flat_subs = get_segments(
+            transcript,
+            audio,
+            episode=args.episode,
+            is_clips=(args.clips is not None and args.clips),
+            kill_anomalies=args.kill_anomalies
+        )
 
     json_path = args.transcript_json
     save_json = bool(json_path and json_path.lower() != 'false')

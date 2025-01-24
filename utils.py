@@ -1,7 +1,7 @@
 import re
 import numpy as np
 import logging
-from typing import Optional, TypedDict, Union, Iterable
+from typing import TypedDict, Union, Iterable
 from collections import UserDict
 
 from faster_whisper.transcribe import Segment, Word, TranscriptionInfo
@@ -122,26 +122,19 @@ def is_segment_anomaly(segment: Segment) -> bool:
     return is_anomaly(score, len(words), words)
 
 
-class PropertyDict(UserDict):
-    def __init__(self, dict=None, /, **kwargs):
-        super().__init__(dict, kwargs=kwargs)
-
+class PropertyDict(UserDict):    
     def __getattr__(self, key):
         if key in self.data: return self.data[key]
         else: raise AttributeError(key)
-
     def __setattr__(self, key, value):
         if key == 'data':
             super().__setattr__(key, value)
         else:
             self.data[key] = value
-
     def __getstate__(self):
         return self.data
-
     def __setstate__(self, state):
         self.data = state
-
     def default(o):
         if issubclass(type(o),PropertyDict): return o.data
         raise TypeError(f'Object of type {o.__class__.__name__} is not JSON serializable')
@@ -149,23 +142,40 @@ class PropertyDict(UserDict):
 class WhisperSegment(PropertyDict):
 
     def __init__(self, dict=None, /, **kwargs):
-        super().__init__(dict, kwargs=kwargs)
+        arg_words = dict.pop('words', None) if dict else None
+        dict and dict.pop('text',None)
+
+        arg_words = kwargs.pop('words', arg_words) if kwargs else arg_words
+        kwargs and kwargs.pop('text',None)
+
+        super().__init__(dict, **kwargs)
+
         self._words = None
         self._text = None
-
+        if arg_words: self.words = arg_words
+    
     def __getattr__(self, key):
         if key == 'words':
-            if not self._words: self._words = [WhisperSegment(w) for w in self.data['words']]
+            if not self._words: self._words = [PropertyDict(w) for w in self.data.get('words', [])]
             return self._words
         elif key == 'text':
-            if not self._text: self._text, _ = separate_english("".join([w.word for w in self.words]))
+            if not self._text: 
+                self._text, _ = separate_english("".join([w.word for w in self.words]))
             return self._text
         return super().__getattr__(key)
 
+    def _to_word(w):
+        if type(w) == PropertyDict: return w
+        if type(w) == str: return PropertyDict(word=w)
+        if type(w) == dict: return PropertyDict(w)
+        raise AttributeError(f"Can't covert {type(w)} to PropertyDict")
+
     def __setattr__(self, key, value):
         if key == 'words':
-            self._text = None
-            self._words = [WhisperSegment(w) for w in value]
+            self._text = None        
+            self._words = [WhisperSegment._to_word(w) for w in value]
+        elif key == 'text':
+            pass
         else:
             super().__setattr__(key, value)
 
