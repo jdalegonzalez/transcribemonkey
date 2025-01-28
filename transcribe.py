@@ -41,6 +41,7 @@ from utils import (
     AudioType,
     DEFAULT_PUNCTUATION,
     HALLUCINATIONS,
+    is_a_number,
     PropertyDict,
     SegmentDict,
     SpeakerGuess,
@@ -81,10 +82,11 @@ translator = Translator()
 
 prompt_str = \
 "好大家好. 我是 Ula. 我说中文。 "\
-"好啊！And I'm Tom and I speak both 英文 and 中文。 " \
+"[Laughter] 好啊！And I'm Tom and I speak both 英文 and 中文。 " \
 "Our podcast is called Mandarin Monkey. You can find us at mandarinmonkey.com. " \
-"Uh, well, yeah.  This is episode 381!  第三百八十一集！" \
-"I'm 很开心啊。 I'm very happy too.  Yeah.  We went to Pier Thirty-Nine, just to eat something."
+"Uh, well, [ha ha ha] yeah.  This is episode 381!  第三百八十一集！" \
+"I'm 很开心啊。 I'm very happy too.  Yeah.  We went to Pier Thirty-Nine, just to eat something." \
+"Ula is a wonderful host and my name is Tom.  I'm a co-host."
 
 ## Things I could maybe tune...
 ## beam_size: 1,
@@ -139,7 +141,9 @@ class FakeYouTube():
         self.title = title
 
 def cached_youtube(video_id: str, filename: str, transcript_path: str) -> Union[None, tuple[str, None, FakeYouTube]]:
+    if not transcript_path: transcript_path = "./transcripts/"
     transcript_json = transcript_json_name(transcript_path, video_id)
+    if not filename: filename = "./audio_out/"
     filepath = audio_filename(filename, video_id)
     result = None
     if os.path.isfile(transcript_json):
@@ -274,7 +278,7 @@ def plot_spectogram_from_file(filename: str, video_id: str, transcript: str, cli
 
     return
 
-def print_text_transcript(filename):
+def print_json_data(json_data):
     class Bcolors:
         MAGENTA = '\033[95m'
         WHITE = '\033[97m'
@@ -294,8 +298,6 @@ def print_text_transcript(filename):
     fs = f'{Bcolors.OKGREEN}'
     fe = f'{Bcolors.WARNING}{Bcolors.ITALIC}'
 
-    json_data = load_transcript_from_file(filename)
-    
     def get_start_end(data, field):
         # Check the old format...
         modified = data.get('modified', None)
@@ -313,6 +315,10 @@ def print_text_transcript(filename):
             end = to_minutes_seconds(get_start_end(line, 'end'))
             fp = Bcolors.BOLD + (Bcolors.CYAN if line['speaker'] == 'Tom' else Bcolors.MAGENTA)
             print(f'{fs}{start} - {end}{e} {fp}{line['speaker']}{e}: {line['text']}')
+
+def print_text_transcript(filename):
+    json_data = load_transcript_from_file(filename)
+    print_json_data(json_data)    
 
 def create_word_doc(filename):
     json_data = load_transcript_from_file(filename)
@@ -742,56 +748,77 @@ def audio_from_file(source:str, sampling_rate:int = None):
     sr = sampling_rate if sampling_rate else 16000
     return (aud, sr)
 
+def json_representation(
+    title: str, 
+    episode: str, 
+    vid: str,
+    audio_filename:str, 
+    segments:Union[SegmentDict,SubSegment],
+    save_audio_func: Optional[callable] = None,
+) -> dict:
+
+    transcript = {}
+    transcript["title"] = title
+    transcript["episode"] = episode
+    transcript["YouTubeID"] = vid
+    transcript["AudioFile"] = audio_filename
+    transcript["transcription"] = []
+
+    # There can be only one selected.  If for some reason
+    # we see more than one, we'll fix it and warn.
+    seen_selected = False
+    for seg in segments:
+        values:SegmentDict = dict(seg) if type(seg) == dict else seg.to_dict()
+        if values['selected'] and seen_selected:
+            logging.warning(f'More than one selected row at {len(transcript["transcription"])}')
+            values['selected'] = False
+        values.pop('size', None)
+        seen_selected = bool(seen_selected or values['selected'])
+        transcript["transcription"].append(values)
+        if save_audio_func: save_audio_func(values)
+
+    return transcript
+
+def write_json(dest, obj):
+    with open(dest, 'w', encoding='utf8') as stream:
+        json.dump(obj, stream, indent = 2, ensure_ascii=False, default=SubSegment.default)
+        stream.write("\n")
+
 def save(
-        title:str, 
-        episode: str,
-        vid:str, 
-        audio_filename:str, 
-        audio_folder:str, 
-        json_destination: str,
-        save_json:bool, 
-        save_audio:bool, 
-        audio: AudioType, 
-        segments:Union[SegmentDict, SubSegment]):
+    title:str, 
+    episode: str,
+    vid:str, 
+    audio_filename:str, 
+    audio_folder:str, 
+    json_destination: str,
+    save_json:bool, 
+    save_audio:bool, 
+    audio: AudioType, 
+    segments:Union[SegmentDict, SubSegment]
+) -> None:
 
-        if not save_audio and not save_json:
-            return
+    if not save_audio and not save_json:
+        return
 
-        base = audio_folder if audio_folder.endswith(os.path.sep) \
-            else os.path.join(audio_folder, 'audio_samples')
-        
-        def dest(speaker: str) -> str:
-            sp = "_unknown_" if speaker is None or not speaker.strip() else speaker.strip().lower()
-            p = os.path.join(base, vid, sp)
-            if not os.path.exists(p):
-                os.makedirs(p)
-            return p
+    base = audio_folder if audio_folder.endswith(os.path.sep) \
+        else os.path.join(audio_folder, 'audio_samples')
+    
+    def dest(speaker: str) -> str:
+        sp = "_unknown_" if speaker is None or not speaker.strip() else speaker.strip().lower()
+        p = os.path.join(base, vid, sp)
+        if not os.path.exists(p):
+            os.makedirs(p)
+        return p
 
-        transcript = {}
-        transcript["title"] = title
-        transcript["episode"] = episode
-        transcript["YouTubeID"] = vid
-        transcript["AudioFile"] = audio_filename
-        transcript["transcription"] = []
+    def save_func(values):
+        if save_audio and values['export'] and values['speaker'] is not None and values['speaker'].strip() :
+            segment_file = SubSegment.static_file_dest(vid, values['row_id'], path=dest(values['speaker']))
+            SubSegment.save_audio_slice(segment_file, audio, values['modified_start'], values['modified_end'])
 
-        # There can be only one selected.  If for some reason
-        # we see more than one, we'll fix it and warn.
-        seen_selected = False
-        for seg in segments:
-            values:SegmentDict = dict(seg) if type(seg) == dict else seg.to_dict()
-            if values['selected'] and seen_selected:
-                logging.warning(f'More than one selected row at {len(transcript["transcription"])}')
-                values['selected'] = False
-            values.pop('size', None)
-            seen_selected = bool(seen_selected or values['selected'])
-            transcript["transcription"].append(values)
-            if save_audio and values['export'] and values['speaker'] is not None and values['speaker'].strip() :
-                segment_file = SubSegment.static_file_dest(vid, values['row_id'], path=dest(values['speaker']))
-                SubSegment.save_audio_slice(segment_file, audio, values['modified_start'], values['modified_end'])
+    sf = save_func if save_audio else None
 
-        with open(json_destination, 'w', encoding='utf8') as stream:
-            json.dump(transcript, stream, indent = 2, ensure_ascii=False)
-            stream.write("\n")
+    transcript = json_representation(title, episode, vid, audio_filename, segments, save_audio_func=sf)
+    write_json(json_destination, transcript)
 
 def duration_to_hours_minutes_seconds(dur):
     seconds_in_day = 24 * 60 * 60
@@ -855,13 +882,13 @@ def whisper_transcribe(
 
 
 def words_for_pyannote_segments(
-        model,
-        audio, 
-        segments,
-        model_name: str = MODEL_NAME, 
-        device: str = DEVICE, 
-        use_whisper:bool = False, 
-        language: str = "en"):
+    model,
+    audio, 
+    segments,
+    model_name: str = MODEL_NAME, 
+    device: str = DEVICE, 
+    use_whisper:bool = False, 
+    language: str = "en"):
 
     audio_data, sr = audio
     kwargs = dict(DEFAULT_TRANSCRIBE_KWARGS)
@@ -905,6 +932,7 @@ def words_for_pyannote_segments(
 
     segments, _ = result
     bag_of_words = []
+
     def to_tdict(word):
         return PropertyDict({
             'word': word.word,
@@ -912,7 +940,6 @@ def words_for_pyannote_segments(
             'end': word.end,
             'probability': word.probability
         })
-    
     
     def likely_fake(word):
         return word.end - word.start < .22 or word.probability < .6
@@ -932,22 +959,33 @@ def words_for_pyannote_segments(
     return bag_of_words
 
 def pyannote_collapse_convert_segments(audio, segments:list[WhisperSegment]) -> list[SubSegment]:
+
     results = []
     for ndx, seg in enumerate(segments):
         # Empty segments at this point need to be collapsed.  We'll just add their time 
         # to the previous next segment (or dump if it's the last)
         seg.id = ndx
-        if results and not results[-1].text:
+        last_seg = results[-1] if results else None
+        if not last_seg:
+            results.append(SubSegment.from_whisper_segment(audio, seg))
+            continue
+        if not last_seg.text:
             # We added an empty segment, so collapse this one, into the 
             # previous one.
-            results[-1].text = seg.text
-            results[-1].end = seg.end
-        elif results and results[-1].text and not seg.text:
+            last_seg.speaker = seg.speaker
+            last_seg.text = seg.text
+            last_seg.end = seg.end
+        elif last_seg.text and not seg.text:
             # This segment doesn't have words, so collapse it into
             # the previous.
-            results[-1].end = seg.end
+            last_seg.end = seg.end
+        elif last_seg.speaker == seg.speaker:
+            # Both segments have text but they're also the same speaker
+            # so collapse them
+            last_seg.merge(seg)
         else:
             results.append(SubSegment.from_whisper_segment(audio, seg))
+
     return results
 
 def pyannote_transcribe(audio_file:str, use_whisper:bool = False, 
@@ -955,6 +993,8 @@ def pyannote_transcribe(audio_file:str, use_whisper:bool = False,
     device:str=DEVICE, 
     language:str = "en",
     episode: str = ""):
+
+    checkpoints = True # should we save as json the data we've got at various points.
 
     # apply pretrained pipeline
     pyannote_sample_rate = 44100
@@ -1003,6 +1043,7 @@ def pyannote_transcribe(audio_file:str, use_whisper:bool = False,
 
     # If we got here and somehow don't have segments, bail.
     if not segments: return
+    if checkpoints: write_json('./initial_segments.json', segments)
 
     if use_whisper:
         model = whisper.load_model(
@@ -1014,9 +1055,7 @@ def pyannote_transcribe(audio_file:str, use_whisper:bool = False,
         )
 
     bag_of_words = words_for_pyannote_segments(model, whisper_audio, segments, model_name, device, use_whisper, language)
-    with open("./bag_of_words.json", 'w', encoding='utf8') as stream:
-        json.dump(bag_of_words, stream, indent = 2, ensure_ascii=False, default=PropertyDict.default)
-        stream.write("\n")
+    if checkpoints: write_json('./bag_of_words.json',bag_of_words)
 
     # For each segment, grap the words that go in the segment.  If
     # we find a word that stradles the end of the segment, we'll
@@ -1025,6 +1064,10 @@ def pyannote_transcribe(audio_file:str, use_whisper:bool = False,
         return word.start <= seg.end and word.end <= seg.end
 
     def add_with_boundary_fixup(ndx, segments, segment, word, fix_boundary):
+        # If the first word starts with a continuation character, and
+        # we've got a previous segment, we're going to assume that we
+        # misapplied the previous word - which sometimes happens on a segment
+        # boundary.
         if fix_boundary and ndx and not segment.words and word.word.startswith(','):
             last_seg = segments[ndx - 1]
             last_word = last_seg.words.pop()
@@ -1032,35 +1075,53 @@ def pyannote_transcribe(audio_file:str, use_whisper:bool = False,
 
         segment.words.append(word)
 
-    def put_words_in_segments(words, segs, fix_boundary = True):
+    def put_words_in_segments(words, segs, fix_boundary:bool = True):
+        episode = ""
+        add_to_episode = False
         for ndx, seg in enumerate(segs):
             seg.words = []
             while words and should_add_to_seg(words[0], seg):
-                # If the first word starts with a continuation character, and
-                # we've got a previous segment, we're going to assume that we
-                # misapplied the previous word - which sometimes happens on a segment
-                # boundary.
-                add_with_boundary_fixup(ndx, segments, seg, words.pop(0), fix_boundary)
+                word = words.pop(0)
+                add_to_episode = add_to_episode and is_a_number(word)
+                if add_to_episode: episode += word
+                add_to_episode = add_to_episode or word.word.strip().lower() == "episode"
+                add_with_boundary_fixup(ndx, segments, seg, word, fix_boundary)
+        return episode
     
-    put_words_in_segments(bag_of_words, segments)
+    possible_episode = put_words_in_segments(bag_of_words, segments)
+    if not episode: episode = possible_episode
 
     # Theoretically, the bag of words should be empty now.  If it isn't, just
     # add them all to the end.
     for word in bag_of_words: segments[-1].words.append(word)
-
+    if checkpoints: write_json('./segs_with_words.json', segments)
     for seg in segments:
         if seg.speaker == "Ula" and not seg.contains_chinese():
             chinese_bag = words_for_pyannote_segments(model, whisper_audio, [seg], model_name, device, use_whisper, language="zh")
-            put_words_in_segments(chinese_bag, [seg])
+            put_words_in_segments(chinese_bag, [seg], fix_boundary=False)
+    if checkpoints: write_json('./segs_with_words_2pass.json', segments)
 
     # clear gpu vram
     del model
     torch.cuda.empty_cache()
 
     results = pyannote_collapse_convert_segments(whisper_audio, segments)
+    if checkpoints: write_json('./segs_collapsed.json', results)
 
     return (episode, results, whisper_audio)
 
+def unsegmented_transcribe(audio_file, use_whisper: bool = False, language: str = "en", episode: str = "", kill_anomalies: bool = False, clips: list[float] = None):
+    tfunc = whisper_transcribe if use_whisper else transcribe
+    transcript, audio = tfunc(audio_file, language=language, clips=clips)
+    episode, flat_subs = get_segments(
+        transcript,
+        audio,
+        episode=episode,
+        is_clips=(clips is not None and clips),
+        kill_anomalies=kill_anomalies
+    )
+
+    return (episode, flat_subs, audio)
 
 if __name__ == '__main__':
 
@@ -1084,27 +1145,27 @@ if __name__ == '__main__':
             logging.error('No document created.')
         quit()
 
-    audio_file, _, yt = get_youtube_audio(args.video_id, is_short=args.is_a_short, filename=args.filename)
+    json_path = args.transcript_json
+    save_json = bool(json_path and json_path.lower() != 'false')
+
+    audio_file, _, yt = get_youtube_audio(
+        args.video_id,
+        is_short=args.is_a_short,
+        filename=args.filename,
+        transcript_path=json_path
+    )
 
     logging.info(f'Transcribing: "{yt.title}"')
 
     start_trans = datetime.datetime.now()
 
     if args.use_pyannote:
-        episode, flat_subs, audio = pyannote_transcribe(audio_file, args.use_whisper, language=args.lang, episode=args.episode)
+        episode, flat_subs, audio = pyannote_transcribe(
+            audio_file, args.use_whisper, language=args.lang, episode=args.episode)
     else:
-        tfunc = whisper_transcribe if args.use_whisper else transcribe
-        transcript, audio = tfunc(audio_file, language=args.lang, clips=args.clips)
-        episode, flat_subs = get_segments(
-            transcript,
-            audio,
-            episode=args.episode,
-            is_clips=(args.clips is not None and args.clips),
-            kill_anomalies=args.kill_anomalies
-        )
-
-    json_path = args.transcript_json
-    save_json = bool(json_path and json_path.lower() != 'false')
+        episode, flat_subs, audio = unsegmented_transcribe(
+            audio_file, args.use_whisper, language=args.lang, episode=args.episode,
+            kill_anomalies=args.kill_anomalies, clips=args.clips)
 
     json_dest = transcript_json_name(json_path, args.video_id)
     should_save_segments = bool(args.audio_folder)
@@ -1119,8 +1180,8 @@ if __name__ == '__main__':
     )
     
     if not should_save_segments and not save_json:
-        for seg in flat_subs:
-            print(seg)
+        data = json_representation(yt.title, episode, args.video_id, audio_file, flat_subs)
+        print_json_data(data)
     
     end_trans = datetime.datetime.now()
     diff = end_trans - start_trans

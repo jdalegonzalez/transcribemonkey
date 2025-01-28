@@ -107,8 +107,12 @@ def get_arguments():
     )
 
     args = parser.parse_args()
-    if args.video_id is None and not args.word_doc:
-        parser.error("Youtube ID (-v, --video) is required.")
+
+    # We're not going to require a video id if we've been given
+    # the full path to a transcript.
+    transcript_exists = os.path.isfile(args.transcript_json)
+    if args.video_id is None and not transcript_exists:
+        parser.error("Youtube ID (-v, --video) is required if you're not referrencing an existing transcript.")
 
     if args.word_doc or args.print_text:
         exists = args.transcript_json and os.path.exists(args.transcript_json)

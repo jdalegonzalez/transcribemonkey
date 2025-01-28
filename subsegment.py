@@ -1,5 +1,5 @@
 import os
-from typing import Optional
+from typing import Optional, Self, Union
 import numpy as np
 
 from faster_whisper.transcribe import Segment, Word
@@ -122,6 +122,14 @@ class SubSegment():
         ret.finalize()
         return ret
     
+    def merge(self, other:Union[Self, WhisperSegment]):
+        add_to_end = other.end > self.end
+        self.end = max(self.end, other.end)
+        self.start = min(self.start, other.start)
+        new_text = self.text + other.text if add_to_end else other.text + self.text
+        self.text =  new_text
+        self._anomaly_score += other.anomaly_score()
+        
     def to_dict(self) -> SegmentDict:
         result = {}
         result['row_id'] = self.id
@@ -276,3 +284,6 @@ class SubSegment():
     def __str__(self):
         return f'[{to_minutes_seconds(self.start)}] {self.speaker_string()}{self.text.strip()}'
 
+    def default(o):
+        if issubclass(type(o), SubSegment): return o.to_dict()
+        return WhisperSegment.default(o)

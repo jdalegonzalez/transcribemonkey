@@ -1,7 +1,7 @@
 import re
 import numpy as np
 import logging
-from typing import TypedDict, Union, Iterable
+from typing import Iterable, Self, TypedDict, Union
 from collections import UserDict
 
 from faster_whisper.transcribe import Segment, Word, TranscriptionInfo
@@ -9,6 +9,7 @@ from faster_whisper.transcribe import Segment, Word, TranscriptionInfo
 import jieba
 from xpinyin import Pinyin
 
+from word2number import w2n
 
 # There is no real reason to put this 'priming' request here.
 # I'm doing it because jieba logs some stuff on the first 
@@ -66,7 +67,7 @@ def combine_words(words:list[str]):
             else ""
         text += (prefix + word)
         was_chinese = is_chinese
-        ended_with_punc = text[-1] in punc
+        ended_with_punc = text[-1] in punc and text[-1] != "'"
         ended_with_space = text[-1] == " "
 
         pinyin_pfx = " " if pinyin and word not in punc else ""
@@ -75,11 +76,23 @@ def combine_words(words:list[str]):
 
     return (text,pinyin)
 
-def separate_english(text:str, left_trim=True) -> tuple[str, str]:
+def is_a_number(val:str) -> bool:
+    if not val: return False
+
+    t = None
+
+    try: t = float(val)
+    except ValueError: t = None
+    if t: return True
+
+    try: t = w2n.word_to_num(val)
+    except ValueError: t = None
+    return t is not None
+
+def separate_english(text:str) -> tuple[str, str]:
     sep = text
     pinyin = ""
     sep, pinyin = combine_words(jieba.lcut(text)) if contains_chinese(text) else (text, "")
-    if left_trim: sep = sep.lstrip()
     return (sep, pinyin)
 
 def to_minutes_seconds(seconds:float) -> str:
@@ -182,6 +195,27 @@ class WhisperSegment(PropertyDict):
     def contains_chinese(self):
         if not self._text: return contains_chinese("".join([w.word for w in self.words]))
         return contains_chinese(self._text)
+    
+    def anomaly_score(self) -> float:
+        if not self._words: return 0
+        score = 0
+        for word in self._words: score += word_anomaly_score(word)
+        return score
+
+    def merge(self, other:Self):
+        add_to_end = other.end > self.end
+        self.end = max(self.end, other.end)
+        self.start = min(self.start, other.start)
+        self._text = None
+        my_words = [] if self._words is None else self._words
+        other_words = [] if other._words is None else other._words
+        if add_to_end: 
+            my_words += other_words
+            result = my_words
+        else:
+            other_words += my_words
+            result = other_words
+        self._words = result
 
 class SpeakerGuess(TypedDict):
     score: float
