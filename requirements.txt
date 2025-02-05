@@ -1,0 +1,11 @@
+word2number
+googletrans
+transformers
+stable-ts
+faster-whisper
+pytubefix
+docxtpl
+hanziconv
+soundfile
+jieba
+xpinyin
