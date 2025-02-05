@@ -10,3 +10,5 @@ soundfile
 jieba
 xpinyin
 pyannote-audio
+kivy
+sounddevice

@@ -660,7 +660,8 @@ class TranscriptScreen(Widget):
     def window_resize_triggered(self, *args):
         for line in self.lines:
             line['size'] = self.calculate_size(line)
-        Clock.schedule_once(lambda _x: self.transcript_view.refresh_from_data())
+        if self.transcript_view:
+            Clock.schedule_once(lambda _x: self.transcript_view.refresh_from_data())
 
     def on_window_resize(self,*args):
         self.window_resize_trigger()
@@ -1471,7 +1472,7 @@ def get_arguments():
         default=None
     )
     args = parser.parse_args()
-    if os.path.isdir(args.transcript_json) and args.video_id is not None:
+    if args.transcript_json and os.path.isdir(args.transcript_json) and args.video_id is not None:
         filename = os.path.join(args.transcript_json, f'{args.video_id}.transcript.json')
         if os.path.isfile(filename):
             args.transcript_json = filename
