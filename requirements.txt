@@ -9,3 +9,4 @@ hanziconv
 soundfile
 jieba
 xpinyin
+pyannote-audio

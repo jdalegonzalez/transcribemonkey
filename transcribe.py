@@ -51,7 +51,7 @@ from utils import (
 )
 
 ##### Constants #####
-DEVICE = "cpu"
+DEVICE = "cpu" if not torch.cuda.is_available() else "cuda"
 COMPUTE_TYPE = "int8"
 MODEL_NAME = "large-v3"
 WHISPER_MODEL_DIR = "./models"
@@ -394,18 +394,14 @@ def transcribe(
     
     if on_seg(f'{audio_file} loaded. Duration: {dur}, sample rate: {sr}', 0, 0, 0): return None
 
+    transcription = whisper_model.transcribe_original(audio_waveform, **kwargs)
     if method == TranscribeMethods.STABLE_WHISPER:
         # O5OjKjno9Pw
         # duration: 41:08
         # "large-v3" INFO:root:Transcription finished in 00:27:51
-        _, info = whisper_model.transcribe(audio_waveform, **kwargs)
-        result:stable_whisper.WhisperResult = whisper_model.transcribe_stable(audio_waveform, **kwargs)
+        _, info = transcription
+        result:stable_whisper.WhisperResult = whisper_model.transcribe(audio_waveform, **kwargs)
         transcription = (result, info)
-    else:
-        # O5OjKjno9Pw
-        # duration: 41:08
-        # "large-v3" INFO:root:Transcription finished in 00:31:15
-        transcription = whisper_model.transcribe(audio_waveform, **kwargs)
 
     # clear gpu vram
     del whisper_model
@@ -848,6 +844,8 @@ def whisper_transcribe(
         on_seg:Optional[callable] = default_on_seg,
         clips: list[float] = None) -> Union[None, tuple[TranscriptionType, AudioType]]:
 
+    # TODO: Stable Whisper will sit on traditional whisper in addtion to faster
+    # perhaps we should stabilize traditional whisper.
     sr = whisper.audio.SAMPLE_RATE
 
     model = whisper.load_model(model_name, device=device, download_root=WHISPER_MODEL_DIR)
@@ -927,7 +925,7 @@ def words_for_pyannote_segments(
         model = stable_whisper.load_faster_whisper(
             model_name, device=device, compute_type=COMPUTE_TYPE
         )
-        transcription = model.transcribe_stable(audio_data, **kwargs)
+        transcription = model.transcribe(audio_data, **kwargs)
         result = (transcription, info)
 
     segments, _ = result
@@ -1129,6 +1127,7 @@ if __name__ == '__main__':
 
     logging.basicConfig(level=args.log_level.upper())
 
+    logging.info(f"Device: {DEVICE}, Compute Type: {COMPUTE_TYPE}")
     if args.do_plot:
         plot_spectogram_from_file(args.filename, args.video_id, args.transcript_json, args.clips)
         quit()
