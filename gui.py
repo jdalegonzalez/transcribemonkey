@@ -115,7 +115,7 @@ class SentenceInput(TextInput):
             events.slider_pos_request(self, .8)
             handled = True
         elif is_shortcut:
-            k = SentenceInput.meta_key_map.get(self.interesting_keys.get(key))
+            k = SentenceInput.meta_key_map.get(self.interesting_keys.get(key,""))
             if k:
                 self.do_cursor_movement(k, control=control, alt=alt, meta='meta' in modifiers)
                 handled = True

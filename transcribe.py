@@ -9,6 +9,7 @@ import string
 import sys
 from enum import Enum
 
+from pyparsing import Callable
 from word2number import w2n
 
 # EXCEPTIONALLY janky but translator uses a very old httpx.
@@ -81,12 +82,11 @@ HF_MODELS = {
 translator = Translator()
 
 prompt_str = \
-"好大家好. 我是 Ula. 我说中文。 "\
-"[Laughter] 好啊！And I'm Tom and I speak both 英文 and 中文。 " \
-"Our podcast is called Mandarin Monkey. You can find us at mandarinmonkey.com. " \
-"Uh, well, [ha ha ha] yeah.  This is episode 381!  第三百八十一集！" \
-"I'm 很开心啊。 I'm very happy too.  Yeah.  We went to Pier Thirty-Nine, just to eat something." \
-"Ula is a wonderful host and my name is Tom.  I'm a co-host."
+"You are a bilingual, English and Chinese speaker. " \
+"You have been asked to transcribe a podcast as acurately as you can."\
+"The podcast hosted by Tom and Ula.  Tom speaks both 英文 and 中文。 " \
+"Ula speaks mostly 中文. The podcast is called Mandarin Monkey and is about " \
+"their life, their family, and their experiences. "
 
 ## Things I could maybe tune...
 ## beam_size: 1,
@@ -130,7 +130,7 @@ def transcript_json_name(file_or_path: str, video_id: str):
         result = os.path.join(file_or_path, f'{video_id}.transcript.json')
     return result
 
-def translate(txt:str, src:str=None, dest:str=None) -> str:
+def translate(txt:str, src:Union[str, None]=None, dest:Union[str, None]=None) -> str:
     if src is None: src = 'zh-cn' if contains_chinese(txt) else 'en'
     if dest is None: dest = 'en' if src == 'zh-cn' else 'zh-cn'
     result = translator.translate(txt, src=src, dest=dest)
@@ -156,7 +156,7 @@ def cached_youtube(video_id: str, filename: str, transcript_path: str) -> Union[
         tx_video_id = json_data.get('YouTubeID', None) if json_data else None
         title = json_data.get('title', "") if json_data else ""
         absp = os.path.abspath
-        if absp(audiofile) == absp(filepath) and tx_video_id == video_id:
+        if absp(audiofile or "") == absp(filepath) and tx_video_id == video_id:
             logging.info("Returning cached audio.")
             # The audio file and youtube id match, so we've done this before.
             yt = FakeYouTube(title)
@@ -170,8 +170,8 @@ def get_youtube_audio(
         yt_object:Optional[YouTube]=None,
         is_short:bool=False,
         progress_callback = None,
-        filename:Optional[str]="",
-        transcript_path:Optional[str]=""
+        filename:str="",
+        transcript_path:str=""
     ):
     """
     Given a YouTube object, extract the audio component of it.
@@ -356,7 +356,7 @@ def transcribe(
         suppress_numerals:bool=False,
         language:str="en",
         on_seg:Optional[callable] = default_on_seg,
-        clips: list[float] = None) -> Union[None, tuple[TranscriptionType, AudioType]]:
+        clips: Union[list[float], None] = None) -> Union[None, tuple[TranscriptionType, AudioType]]:
 
     """
     Passes the audio to faster_whisper for transcription and then
@@ -456,7 +456,7 @@ def speaker_for_clip(
     audio: AudioType,
     classifier: Pipeline,
     piece:Union[Word, SubSegment],
-    previous: Union[SpeakerGuess, None]=None) -> SpeakerGuess:
+    previous: Union[SpeakerGuess, None]=None) -> tuple[SpeakerGuess, float, float]:
 
     # If there isn't text, then there can't be a speaker.
     duration = piece.end - piece.start
@@ -825,7 +825,7 @@ def duration_to_hours_minutes_seconds(dur):
     minutes = dur_pieces[1]
     return (hours, minutes, seconds)
 
-def get_hf_token() -> str:
+def get_hf_token() -> Union[str,None]:
     token = os.getenv('HF_TOKEN', None)
     if token is None:
         path = os.path.expanduser('~/.cache/huggingface/token')
@@ -839,10 +839,10 @@ def whisper_transcribe(
         audio_file:str, 
         model_name:str=MODEL_NAME,
         device:str=DEVICE, 
-        compute_type:str=COMPUTE_TYPE, 
+        _compute_type:str=COMPUTE_TYPE, 
         language:str="en",
-        on_seg:Optional[callable] = default_on_seg,
-        clips: list[float] = None) -> Union[None, tuple[TranscriptionType, AudioType]]:
+        on_seg:Callable[[str, int, int, float], bool] = default_on_seg,
+        clips: Union[list[float],None] = None) -> Union[None, tuple[TranscriptionType, AudioType]]:
 
     # TODO: Stable Whisper will sit on traditional whisper in addtion to faster
     # perhaps we should stabilize traditional whisper.

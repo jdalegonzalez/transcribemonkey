@@ -38,6 +38,23 @@ HALLUCINATIONS = [
     "ING PAO CANADAING PAO TORONTO",
 ]
 
+class PropertyDict(UserDict):    
+    def __getattr__(self, key):
+        if key in self.data: return self.data[key]
+        else: raise AttributeError(key)
+    def __setattr__(self, key, value):
+        if key == 'data':
+            super().__setattr__(key, value)
+        else:
+            self.data[key] = value
+    def __getstate__(self):
+        return self.data
+    def __setstate__(self, state):
+        self.data = state
+    def default(self,o):
+        if issubclass(type(o),PropertyDict): return o.data
+        raise TypeError(f'Object of type {o.__class__.__name__} is not JSON serializable')
+
 AudioType = tuple[np.ndarray, float]
 TranscriptionType = tuple[Iterable[Segment], TranscriptionInfo]
 
@@ -89,6 +106,37 @@ def is_a_number(val:str) -> bool:
     except ValueError: t = None
     return t is not None
 
+def split_sentence(text:str, drop_punc = False) -> tuple[str, int, str, int]:
+    """
+    Splits a sentence that contains english and chinese into the english and chinese parts.
+
+    Args:
+        text (str): The sentence to split.
+        drop_punc (bool): If True, punctuation will be dropped from the english text.
+    Returns:
+        tuple[str, int, str, int]: A tuple containing the english text, word count,
+                                   chinese text, and number of chinese characters.
+    """
+    words = jieba.lcut(text)
+    english_text = ""
+    chinese_text = ""
+    english_count = 0
+    chinese_count = 0
+    punc = DEFAULT_PUNCTUATION + "，,!！."
+    trans = str.maketrans(str.maketrans('','',punc))
+    for word in words:
+        word = word.strip().translate(trans) if drop_punc else word.strip()
+        if not word: continue  # skip empty words
+        if contains_chinese(word):
+            chinese_text += word
+            chinese_count += len(word)
+        else:
+            space = " " if english_text and not english_text.endswith(" ") and not word.startswith(tuple(" " + punc)) else ""
+            english_text += (space + word)
+            english_count += (1 if len(word.strip().translate(trans)) else 0)
+
+    return (english_text, english_count, chinese_text, chinese_count)
+
 def separate_english(text:str) -> tuple[str, str]:
     sep = text
     pinyin = ""
@@ -107,7 +155,7 @@ def word_count(txt:str, punc=DEFAULT_PUNCTUATION + ",") -> int:
     return len(words)
 
 # anomalous words are very long/short/improbable
-def word_anomaly_score(word: Word) -> float:
+def word_anomaly_score(word: Union[Word, PropertyDict]) -> float:
     probability = word.probability
     duration = word.end - word.start
     score = 0.0
@@ -123,8 +171,14 @@ def is_anomaly(score, num_words, text:Union[str, list[Word]]):
     # This was the old score
     #return score >= 3 or score + 0.01 >= len(words)
     if score > 6 and score <= 7:
-        txt = text if type(text) == str else " ".join([w.word.strip() for w in text])
+        if type(text) == str:
+            txt = text.strip()
+        else:
+            assert type(text) == list, f"Expected list of words, got {type(text)}"
+            txt = " ".join([w.word.strip() for w in text])
+
         logging.info(f"Almost Anomaly: ({score}) '{txt}'")
+
     return score > 7 or score + 0.01 >= num_words
 
 def is_segment_anomaly(segment: Segment) -> bool:
@@ -135,31 +189,18 @@ def is_segment_anomaly(segment: Segment) -> bool:
     return is_anomaly(score, len(words), words)
 
 
-class PropertyDict(UserDict):    
-    def __getattr__(self, key):
-        if key in self.data: return self.data[key]
-        else: raise AttributeError(key)
-    def __setattr__(self, key, value):
-        if key == 'data':
-            super().__setattr__(key, value)
-        else:
-            self.data[key] = value
-    def __getstate__(self):
-        return self.data
-    def __setstate__(self, state):
-        self.data = state
-    def default(o):
-        if issubclass(type(o),PropertyDict): return o.data
-        raise TypeError(f'Object of type {o.__class__.__name__} is not JSON serializable')
-
 class WhisperSegment(PropertyDict):
 
     def __init__(self, dict=None, /, **kwargs):
-        arg_words = dict.pop('words', None) if dict else None
-        dict and dict.pop('text',None)
+        
+        arg_words = None
+        if dict:
+            arg_words = dict.pop('words', None)
+            dict.pop('text',None)
 
-        arg_words = kwargs.pop('words', arg_words) if kwargs else arg_words
-        kwargs and kwargs.pop('text',None)
+        if kwargs:        
+            arg_words = kwargs.pop('words', arg_words)
+            kwargs.pop('text',None)
 
         super().__init__(dict, **kwargs)
 
@@ -177,7 +218,7 @@ class WhisperSegment(PropertyDict):
             return self._text
         return super().__getattr__(key)
 
-    def _to_word(w):
+    def _to_word(self, w):
         if type(w) == PropertyDict: return w
         if type(w) == str: return PropertyDict(word=w)
         if type(w) == dict: return PropertyDict(w)
@@ -186,7 +227,7 @@ class WhisperSegment(PropertyDict):
     def __setattr__(self, key, value):
         if key == 'words':
             self._text = None        
-            self._words = [WhisperSegment._to_word(w) for w in value]
+            self._words = [self._to_word(w) for w in value]
         elif key == 'text':
             pass
         else:
