@@ -28,6 +28,7 @@ models/*
 audio_out/
 chunked-audio/
 speakerbox/
+frontend/node_modules
 *.json
 ~*.docx
 hf_token.txt
