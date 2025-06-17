@@ -1,7 +1,7 @@
 # Load the CS-Dialogue dataset from huggingface datasets
 import os
 import typing
-from datasets import load_dataset, DatasetDict, Audio
+from datasets import load_dataset, DatasetDict, Audio, IterableDatasetDict
 import torch
 import evaluate
 from jiwer import wer, cer
@@ -18,7 +18,7 @@ from transformers.training_args_seq2seq import Seq2SeqTrainingArguments
 from transformers.trainer_seq2seq import Seq2SeqTrainer
 
 from dataclasses import dataclass
-from typing import List
+from typing import List, Union
 from utils import split_sentence
 
 # Just defined to make type checkers happy
@@ -71,16 +71,16 @@ chinese_metric = evaluate.load("cer")
 english_metric = evaluate.load("wer")
 
 
-def load_cs_dialogue_dataset() -> DatasetDict:
+def load_cs_dialogue_dataset() -> Union[DatasetDict,IterableDatasetDict]:
     # If the dataset is cached, we'll load it from there.  Otherwise, we'll
     # load it from the base dir, perform the necessary transformations,
     # and cache it for future use.
 
-    # This isn't working right now (although it totally should)
+    # Temporarily disable caching for debugging purposes
     if os.path.exists("/mnt/d/datasets/hf-cs-dialogue/cache"):
         print("Loading cached CS-Dialogue dataset...")
-        t = load_dataset("/mnt/d/datasets/hf-cs-dialogue/cache")
-        assert isinstance(t, DatasetDict), "Expected a DatasetDict"
+        t = load_dataset("/mnt/d/datasets/hf-cs-dialogue/cache", streaming=True)
+        assert isinstance(t, DatasetDict) or isinstance(t, IterableDatasetDict), "Expected a DatasetDict or iterable"
         return t
     
     t = load_dataset("audiofolder", data_dir="/mnt/d/datasets/hf-cs-dialogue/data")

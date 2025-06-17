@@ -23,6 +23,7 @@ transcripts/*.json.*
 transcripts/*.bak
 transcripts/*.docx
 transcripts/audio_samples/*
+whisper-cs-dialogue/
 models/*
 audio_out/
 chunked-audio/
