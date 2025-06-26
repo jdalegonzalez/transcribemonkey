@@ -32,3 +32,4 @@ frontend/node_modules
 *.json
 ~*.docx
 hf_token.txt
+hf_token2.txt

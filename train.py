@@ -5,6 +5,7 @@ from datasets import load_dataset, DatasetDict, Audio, IterableDatasetDict
 import torch
 import evaluate
 from jiwer import wer, cer
+from peft import LoraConfig, get_peft_model
 
 from transformers import (
     WhisperFeatureExtractor,
@@ -13,6 +14,7 @@ from transformers import (
     WhisperTokenizer
 )
 
+from transformers.pytorch_utils import Conv1D
 from transformers.feature_extraction_utils import BatchFeature
 from transformers.training_args_seq2seq import Seq2SeqTrainingArguments
 from transformers.trainer_seq2seq import Seq2SeqTrainer
@@ -59,17 +61,36 @@ processor = typing.cast(MyWhisperProcessor, WhisperProcessor.from_pretrained(mod
 
 assert isinstance(processor, WhisperProcessor), "Expected a WhisperProcessor instance"
 model = WhisperForConditionalGeneration.from_pretrained(model_name)
+print(model)
 model.config.forced_decoder_ids = None
 model.config.suppress_tokens = []
 model.config.use_cache = False # gradient checkpointing is used, so we cannot use the cache
+peft_config = LoraConfig(
+    r=16,
+    lora_alpha=32,
+    target_modules=["q_proj", "v_proj", "k_proj", "out_proj"],
+)
 
-#model.generation_config.task = "transcribe"
+def get_specific_layer_names(model):
+    # Create a list to store the layer names
+    layer_names = []
+    
+    # Recursively visit all modules and submodules
+    for name, module in model.named_modules():
+        # Check if the module is an instance of the specified layers
+        if isinstance(module, (torch.nn.Linear, torch.nn.Embedding, torch.nn.Conv2d, Conv1D)):
+            # model name parsing 
+
+            layer_names.append('.'.join(name.split('.')[4:]).split('.')[0])
+    
+    return layer_names
+
+
 model.generation_config.forced_decoder_ids = None
 data_collator = DataCollatorSpeechSeq2SeqWithPadding(processor=processor)
 
 chinese_metric = evaluate.load("cer")
 english_metric = evaluate.load("wer")
-
 
 def load_cs_dialogue_dataset() -> Union[DatasetDict,IterableDatasetDict]:
     # If the dataset is cached, we'll load it from there.  Otherwise, we'll
@@ -163,43 +184,50 @@ if __name__ == "__main__":
     print(dataset["test"])  # Print the first example in the train set
     print(dataset["train"])  # Print the first example in the train set
 
-    # Set the seed for reproducibility
-    torch.manual_seed(42)
-    # Set the random seed for the processor
-    processor.tokenizer.init_kwargs["seed"] = 42
+    if hasattr(model, "enable_input_require_grads"):
+        print("Enabling input gradients for the model...")
+        model.enable_input_require_grads()
+    else:
+        print("Enabling input gradients for the model using forward hook...")
+        def make_inputs_require_grad(_module, _input, output):
+            output.requires_grad_(True)
 
-    # Set the random seed for the model
-    model.init_weights()  # Initialize the model weights with the seed
+        model.get_input_embeddings().register_forward_hook(make_inputs_require_grad)
+
+    peft_model = get_peft_model(model, peft_config)
+    peft_model.print_trainable_parameters()
+
     # Set the random seed for the dataset
     dataset = dataset.shuffle(seed=42)  # Shuffle the dataset with the seed
     print("Dataset shuffled successfully!")
 
     training_args = Seq2SeqTrainingArguments(
-        output_dir="./whisper-cs-dialogue",  # change to a repo name of your choice
-        per_device_train_batch_size=8,
-        gradient_accumulation_steps=2,  # increase by 2x for every 2x decrease in batch size
+        output_dir="~/projects/transcribemonkey/whisper-cs-dialogue",  # change to a repo name of your choice
+        per_device_train_batch_size=16,
+        gradient_accumulation_steps=1,  # increase by 2x for every 2x decrease in batch size
         learning_rate=1e-5,
         warmup_steps=500,
         max_steps=5000,
         gradient_checkpointing=True,
         fp16=True,
         eval_strategy="steps",
+        save_strategy="best",
         per_device_eval_batch_size=8,
         predict_with_generate=True,
         generation_max_length=225,
-        save_steps=1000,
-        eval_steps=1000,
+        save_steps=500,
+        eval_steps=500,
         logging_steps=25,
-        report_to=["tensorboard"],
+        report_to=None,
         load_best_model_at_end=True,
         metric_for_best_model="mer",
         greater_is_better=False,
         push_to_hub=False,
-        deepspeed="./ds_config.json",  # path to your deepspeed config file
+        #deepspeed="./ds_config.json",  # path to your deepspeed config file
     )
     trainer = Seq2SeqTrainer(
         args=training_args,
-        model=model,
+        model=peft_model,
         train_dataset=dataset["train"],
         eval_dataset=dataset["test"], # type: ignore
         data_collator=data_collator,
@@ -207,3 +235,5 @@ if __name__ == "__main__":
         processing_class=processor.tokenizer,
     )
     trainer.train()
+
+    peft_model.save_pretrained("whisper-cs-dialogue")
