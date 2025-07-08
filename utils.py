@@ -1,10 +1,59 @@
 import re
+from unittest import result
 import numpy as np
 import logging
+import torch
 from typing import Iterable, Self, TypedDict, Union
 from collections import UserDict
 
-from faster_whisper.transcribe import Segment, Word, TranscriptionInfo
+#from faster_whisper.transcribe import Segment, Word, TranscriptionInfo
+# I'm stubbing out these type imports for now because ultimately, I think
+# I'm going to kill faster-whisper.
+class PropertyDict(UserDict):    
+    def __getattr__(self, key):
+        if key in self.data: return self.data[key]
+        else: raise AttributeError(key)
+    def __setattr__(self, key, value):
+        if key == 'data':
+            super().__setattr__(key, value)
+        else:
+            self.data[key] = value
+    def __getstate__(self):
+        return self.data
+    def __setstate__(self, state):
+        self.data = state
+    def default(self,o):
+        if issubclass(type(o),PropertyDict): return o.data
+        raise TypeError(f'Object of type {o.__class__.__name__} is not JSON serializable')
+
+class Segment(PropertyDict):
+    start: float
+    end: float
+    words: list['Word']
+    text: str
+
+class Word(PropertyDict):
+    word: str
+    start: float
+    end: float
+    probability: float
+
+class TranscriptionInfo(TypedDict):
+    pass
+
+class Bcolors:
+    MAGENTA = '\033[95m'
+    WHITE = '\033[97m'
+    OKBLUE = '\033[94m'
+    OKGREEN = '\033[92m'
+    CYAN = '\033[96m'
+    WARNING = '\033[93m'
+    ENDC = '\033[0m'
+    FAIL = '\033[91m'
+    BOLD = '\033[1m'
+    ITALIC = '\033[3m'
+    UNDERLINE = '\033[4m'
+
 
 import jieba
 from xpinyin import Pinyin
@@ -37,31 +86,42 @@ HALLUCINATIONS = [
     "场——YoYo Television Series Exclusive",
     "ING PAO CANADAING PAO TORONTO",
 ]
+DEVICE = "cpu" if not torch.cuda.is_available() else "cuda"
 
-class PropertyDict(UserDict):    
-    def __getattr__(self, key):
-        if key in self.data: return self.data[key]
-        else: raise AttributeError(key)
-    def __setattr__(self, key, value):
-        if key == 'data':
-            super().__setattr__(key, value)
-        else:
-            self.data[key] = value
-    def __getstate__(self):
-        return self.data
-    def __setstate__(self, state):
-        self.data = state
-    def default(self,o):
-        if issubclass(type(o),PropertyDict): return o.data
-        raise TypeError(f'Object of type {o.__class__.__name__} is not JSON serializable')
-
-AudioType = tuple[np.ndarray, float]
+AudioType = tuple[np.ndarray, int]
 TranscriptionType = tuple[Iterable[Segment], TranscriptionInfo]
 
 chinese_characters_range = '\u3002-\u9fff'
 chinese_character_re = re.compile(f'[{chinese_characters_range}]')
 def contains_chinese(text:str) -> bool:
     return chinese_character_re.search(text) is not None
+
+def contains_english(text:str) -> bool:
+    return re.search(r'[a-zA-Z]', text) is not None
+
+def space_english_and_chinese(text: str) -> str:
+    # Insert a space between English and Chinese characters
+    text = text.replace('\t', ' ').replace('\n', ' ').strip()
+    text = re.sub(r'([a-zA-Z])([{}])'.format(chinese_characters_range), r'\1 \2', text)
+    text = re.sub(r'([{}])([a-zA-Z])'.format(chinese_characters_range), r'\1 \2', text)
+
+    # Remove multiple spaces
+    text = re.sub(r'\s+', ' ', text)
+    return text
+
+def audio_from_file(file_path:str) -> AudioType:
+    """
+    Reads an audio file and returns the audio data and sample rate.
+    
+    Args:
+        file_path (str): The path to the audio file.
+        
+    Returns:
+        AudioType: A tuple containing the audio data as a numpy array and the sample rate.
+    """
+    import soundfile as sf
+    audio_data, sample_rate = sf.read(file_path, dtype='float32')
+    return (audio_data, sample_rate)
 
 def combine_words(words:list[str]):
     was_chinese = False
@@ -258,10 +318,6 @@ class WhisperSegment(PropertyDict):
             result = other_words
         self._words = result
 
-class SpeakerGuess(TypedDict):
-    score: float
-    label: str
-
 class SegmentDict(TypedDict):
     row_id: str
     original_start: float
@@ -269,6 +325,9 @@ class SegmentDict(TypedDict):
     modified_start: float
     modified_end: float
     text: str
+    pinyin: str
+    translation: str
+    original_speaker: str
     speaker: str
     speaker_confidence: float
     selectable: bool

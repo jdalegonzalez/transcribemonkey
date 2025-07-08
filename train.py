@@ -1,4 +1,13 @@
-# Load the CS-Dialogue dataset from huggingface datasets
+#! /usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+Train a Whisper model on the CS-Dialogue dataset.
+This code is designed to train a Whisper model on the CS-Dialogue dataset, which is a
+large-scale dataset for Chinese-English code-switching dialogue. The model is trained using
+the Hugging Face Transformers library and the PEFT (Parameter-Efficient Fine-Tuning) library
+for efficient fine-tuning of large language models.  We were only ever able to get this
+to successfully complete using deepspeed.
+"""
 import os
 import typing
 from datasets import load_dataset, DatasetDict, Audio, IterableDatasetDict
@@ -7,7 +16,7 @@ import evaluate
 from jiwer import wer, cer
 from peft import LoraConfig, get_peft_model
 
-from transformers import (
+from transformers.models.whisper import (
     WhisperFeatureExtractor,
     WhisperForConditionalGeneration,
     WhisperProcessor,
@@ -22,6 +31,17 @@ from transformers.trainer_seq2seq import Seq2SeqTrainer
 from dataclasses import dataclass
 from typing import List, Union
 from utils import split_sentence
+
+output_dir=os.path.expanduser("~/projects/transcribemonkey/whisper-cs-dialogue")
+os.makedirs(output_dir, exist_ok=True)
+
+# If a checkpoint exists, set the resume_from_checkpoint argument
+resume_from_checkpoint = None
+for file in os.listdir(output_dir):
+    if file.startswith("checkpoint-"):
+        resume_from_checkpoint = True
+        print(f"Resuming from checkpoint: {resume_from_checkpoint}")
+        break
 
 # Just defined to make type checkers happy
 class MyWhisperProcessor(WhisperProcessor):
@@ -85,7 +105,7 @@ def get_specific_layer_names(model):
     
     return layer_names
 
-
+assert model.generation_config is not None, "Model generation config is None. Please check the model configuration."
 model.generation_config.forced_decoder_ids = None
 data_collator = DataCollatorSpeechSeq2SeqWithPadding(processor=processor)
 
@@ -185,6 +205,8 @@ if __name__ == "__main__":
     print(dataset["train"])  # Print the first example in the train set
 
     if hasattr(model, "enable_input_require_grads"):
+        # Getting here still causes the "nothing needs grads" error.
+        # I may want to switch to always using the forward hook method.
         print("Enabling input gradients for the model...")
         model.enable_input_require_grads()
     else:
@@ -199,12 +221,11 @@ if __name__ == "__main__":
 
     # Set the random seed for the dataset
     dataset = dataset.shuffle(seed=42)  # Shuffle the dataset with the seed
-    print("Dataset shuffled successfully!")
 
     training_args = Seq2SeqTrainingArguments(
-        output_dir="~/projects/transcribemonkey/whisper-cs-dialogue",  # change to a repo name of your choice
-        per_device_train_batch_size=16,
-        gradient_accumulation_steps=1,  # increase by 2x for every 2x decrease in batch size
+        output_dir=output_dir,  # change to a repo name of your choice
+        per_device_train_batch_size=8,
+        gradient_accumulation_steps=2,  # increase by 2x for every 2x decrease in batch size
         learning_rate=1e-5,
         warmup_steps=500,
         max_steps=5000,
@@ -223,7 +244,7 @@ if __name__ == "__main__":
         metric_for_best_model="mer",
         greater_is_better=False,
         push_to_hub=False,
-        #deepspeed="./ds_config.json",  # path to your deepspeed config file
+        deepspeed="./ds_config.json",  # path to your deepspeed config file
     )
     trainer = Seq2SeqTrainer(
         args=training_args,
@@ -234,6 +255,8 @@ if __name__ == "__main__":
         compute_metrics=compute_metrics,
         processing_class=processor.tokenizer,
     )
-    trainer.train()
+    resume_from_checkpoint = None
+    trainer.train(resume_from_checkpoint=resume_from_checkpoint)  # resume from checkpoint if it exists
 
-    peft_model.save_pretrained("whisper-cs-dialogue")
+
+    peft_model.save_pretrained(output_dir)

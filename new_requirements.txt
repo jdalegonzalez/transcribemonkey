@@ -1,0 +1,11 @@
+Cython
+packaging
+soundfile
+#git+https://github.com/NVIDIA/NeMo.git@main#egg=nemo_toolkit[asr]
+clearvoice
+jieba
+xpinyin
+word2number
+hanziconv
+evaluate
+stable-ts

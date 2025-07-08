@@ -42,28 +42,32 @@ from utils import (
     AudioType,
     DEFAULT_PUNCTUATION,
     HALLUCINATIONS,
+    DEVICE,
     is_a_number,
     PropertyDict,
     SegmentDict,
-    SpeakerGuess,
     to_minutes_seconds,
     TranscriptionType,
     WhisperSegment
 )
 
+from speakers import (
+    guess_speaker,
+    SpeakerGuess,
+    NO_GUESS,
+    TOO_SHORT_TO_GUESS_SECONDS,
+)
+
 ##### Constants #####
-DEVICE = "cpu" if not torch.cuda.is_available() else "cuda"
 COMPUTE_TYPE = "int8"
 MODEL_NAME = "large-v3"
 WHISPER_MODEL_DIR = "./models"
 MAX_SEGMENT_LENGTH = 60 # in seconds
 SPEAKER_COLLAPSE_CERTAINTY_CUTOFF = .60 # 0 - 1
 SWITCH_SPEAKER_CUTOFF = .70 # 0 - 1
-TOO_SHORT_TO_GUESS_SECONDS = .2
 TOO_SHORT_TO_BE_REAL_SECONDS = .1
 MIN_PROBABILITY_TO_INCLUDE = .4
 
-NO_GUESS = {'label': "", 'score': 0}
 HF_MODELS = {
     "tiny.en": "openai/whisper-tiny.en",
     "tiny": "openai/whisper-tiny",
@@ -257,7 +261,7 @@ def plot_spectogram_from_file(filename: str, video_id: str, transcript: str, cli
         if os.path.isfile(filepath):
             # Parse the json and grab the audio file from it
             json_data = load_transcript_from_file(filepath)
-            filename = json_data.get('AudioFile', None) if json_data else None
+            filename = json_data.get('AudioFile', '') if json_data else ''
             video_id = json_data.get('YouTubeID', video_id) if json_data else video_id
             path_to_file = filename if filename and os.path.isfile(filename) else None
     
@@ -454,7 +458,6 @@ def add_subsegment(segments:list[SubSegment], new_segment:SubSegment, collapse_s
 
 def speaker_for_clip(
     audio: AudioType,
-    classifier: Pipeline,
     piece:Union[Word, SubSegment],
     previous: Union[SpeakerGuess, None]=None) -> tuple[SpeakerGuess, float, float]:
 
@@ -474,7 +477,7 @@ def speaker_for_clip(
     audio_start = piece.start + .05
     audio_end = piece.end + end_pad
 
-    guess = guess_speaker(SubSegment.slice_audio(audio, audio_start, audio_end), classifier)
+    guess = guess_speaker(SubSegment.slice_audio(audio, audio_start, audio_end))
     if guess == NO_GUESS and previous is not None: guess = previous
 
     return (guess, audio_start, audio_end)
@@ -571,10 +574,9 @@ def _should_skip_word(subseg:Union[SubSegment, None], word: Word) -> bool:
     
     return False
 
-def _speakers_switched(audio:AudioType, classifier:Pipeline, word:Word, guess:SpeakerGuess, prev_speaker:str) -> tuple[bool, str, SpeakerGuess]:
-    if not classifier: return (False, "", NO_GUESS)
+def _speakers_switched(audio:AudioType, word:Word, guess:SpeakerGuess, prev_speaker:str) -> tuple[bool, str, SpeakerGuess]:
     prev = guess
-    guess, start, end = speaker_for_clip(audio, classifier, word, previous=prev)
+    guess, start, end = speaker_for_clip(audio, word, previous=prev)
     speaker = guess['label'] if guess['score'] > SWITCH_SPEAKER_CUTOFF else prev_speaker
     if not prev_speaker: prev_speaker = speaker            
     switched = speaker and speaker != prev_speaker
@@ -585,7 +587,6 @@ def _split_segment(
         segment: Segment, 
         last_sub: Optional[SubSegment],
         punctuation:str=DEFAULT_PUNCTUATION,
-        classifier:Optional[Pipeline] = None,
         is_clips: bool = False,
         capture_episode: bool = True,
         kill_anomalies: bool = False
@@ -609,7 +610,7 @@ def _split_segment(
         if _should_skip_word(subseg or last_sub, word): continue
 
         # If we've switched speakers, we're going to break the subsegment
-        switched, speaker, guess = _speakers_switched(audio, classifier, word, guess, speaker)
+        switched, speaker, guess = _speakers_switched(audio, word, guess, speaker)
         if subseg and switched:
             if subseg: _append_segment(start_segment, result, subseg, last_sub, is_clips, kill_anomalies=kill_anomalies)
             subseg = None
@@ -645,12 +646,6 @@ def _split_segment(
 # [end def split_segment]
 
 
-def guess_speaker(audio: AudioType, classifier: Pipeline) -> SpeakerGuess:
-    # If we have too short a sample, we'll just return NO_GUESS
-    raw, sr = audio
-    if len(raw) < (sr * TOO_SHORT_TO_GUESS_SECONDS): return NO_GUESS
-    return classifier({"sampling_rate": sr, "raw": raw}, top_k=1)[0]
-
 def get_segments(
         transcript: TranscriptionType,
         audio:AudioType,
@@ -659,9 +654,6 @@ def get_segments(
         is_clips:bool = False,
         ignore_shorter_than:float = 0,
         kill_anomalies: bool = True) -> tuple[str, list[SubSegment]]:
-
-    model = "./transcribe-monkey"
-    classifier: Pipeline = pipeline("audio-classification", model=model, device=DEVICE)
 
     segments, info = transcript
     duration = info.duration
@@ -681,7 +673,7 @@ def get_segments(
 
         subs, potential_episode = _split_segment(
             audio, segment, flat_subs[-1] if flat_subs else None,
-            classifier=classifier, is_clips=is_clips, capture_episode=not episode,
+            is_clips=is_clips, capture_episode=not episode,
             kill_anomalies=kill_anomalies
         )
         if not episode and potential_episode: episode = potential_episode
@@ -697,7 +689,7 @@ def get_segments(
             ### If there is too little audio in the sample, we're just going to ignore attempting
             ### set the speaker
             if len(subseg.text.strip()) and subseg.duration >= TOO_SHORT_TO_GUESS_SECONDS:
-                guess, _, _ = speaker_for_clip(audio, classifier, subseg)
+                guess, _, _ = speaker_for_clip(audio, subseg)
                 subseg.set_speaker(guess)
             else:
                 subseg.speaker = ""
@@ -1009,9 +1001,6 @@ def pyannote_transcribe(audio_file:str, use_whisper:bool = False,
     mapping = {"waveform": waveform, "sample_rate": pyannote_sample_rate}
     diarization = pipe(mapping)
    
-    model = "./transcribe-monkey"
-    classifier: Pipeline = pipeline("audio-classification", model=model, device=DEVICE)
-
     g = None
     segments = []
     def skip_segment(previous, current) -> bool:
@@ -1033,7 +1022,7 @@ def pyannote_transcribe(audio_file:str, use_whisper:bool = False,
 
     for turn, _, _ in diarization.itertracks(yield_label=True):
         w = Word(turn.start, turn.end, "X", probability=0.0)
-        g, _, _ = speaker_for_clip(whisper_audio, classifier, w, g)
+        g, _, _ = speaker_for_clip(whisper_audio, w, g)
         label = g['label'].capitalize()
         segment = WhisperSegment({'start': turn.start, 'end': turn.end, 'speaker': label, 'speaker_confidence': g['score'], 'words': []})
         if segments and skip_segment(segments[-1],segment): continue

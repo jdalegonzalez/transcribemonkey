@@ -2,12 +2,14 @@ import os
 from typing import Optional, Self, Union
 import numpy as np
 
-from faster_whisper.transcribe import Segment, Word
+#from faster_whisper.transcribe import Segment, Word
+from utils import Segment, Word
 
 from hanziconv import HanziConv
 
 import soundfile as sf
 
+from speakers import SpeakerGuess
 from utils import (
     AudioType,
     DEFAULT_PUNCTUATION,
@@ -15,7 +17,6 @@ from utils import (
     HALLUCINATIONS,
     SegmentDict,
     separate_english,
-    SpeakerGuess,
     to_minutes_seconds,
     WhisperSegment, 
     word_anomaly_score,
@@ -45,7 +46,7 @@ class SubSegment():
         self.id: str = id
         self._start: float = float(start)
         self._end: float = float(end) if end is not None else self._start
-        self.text: str = text
+        self.text: str = text or ''
         self.pinyin: str = ''
         self.translation: str = ''
         self.audio: AudioType = audio
@@ -57,27 +58,47 @@ class SubSegment():
         self.export = export
         self._anomaly_score = 0
 
+    @staticmethod
     def from_whisper_segment(audio: AudioType, segment:WhisperSegment):
+        speaker_name = segment.speaker if segment.speaker else ''
+        assert type(speaker_name) is str, "Speaker name must be a string"
+        conf = segment.speaker_confidence if segment.speaker_confidence is not None else 0.0
+        assert type(conf) is float, "Speaker confidence must be a float"
+        text = segment.text if segment.text else ''
+        assert type(text) is str, "Segment text must be a string"
+
         return SubSegment(
             id=str(segment.id),
             audio=audio,
             start=segment.start,
             end=segment.end,
-            speaker=segment.speaker,
-            speaker_confidence=segment.speaker_confidence,
-            text=segment.text
+            speaker=speaker_name,
+            speaker_confidence=conf,
+            text=text
         )
-    
+    @staticmethod
     def start_segment(audio: AudioType):
         return SubSegment(
             id='0.0', 
             start=0,
             audio=audio
         )
+
+    @staticmethod
+    def from_segment(audio: AudioType, seg:Segment, is_clips:bool=False):
+        ret = SubSegment(
+            audio=audio,
+            id=seg.id,
+            start=seg.start,
+            end=seg.end,
+            text=seg.text
+        )
+        ret.finalize()
+        return ret
     
     @property
     def speaker_guess(self):
-        return SpeakerGuess(score=self.speaker_confidence, label=(self.speaker or "").lower())
+        return SpeakerGuess(score=self.speaker_confidence or 0.0, label=(self.speaker or "").lower())
 
     @property
     def start(self):
@@ -111,45 +132,36 @@ class SubSegment():
     def anomaly_score(self):
         return self._anomaly_score
     
-    def from_segment(audio: AudioType, seg:Segment, is_clips:bool=False):
-        ret = SubSegment(
-            audio=audio,
-            id=seg.id,
-            start=seg.start,
-            end=seg.end,
-            text=seg.text
-        )
-        ret.finalize()
-        return ret
-    
     def merge(self, other:Union[Self, WhisperSegment]):
         add_to_end = other.end > self.end
         self.end = max(self.end, other.end)
         self.start = min(self.start, other.start)
-        new_text = self.text + other.text if add_to_end else other.text + self.text
+        ot = other.text or ''
+        assert type(ot) is str, "Other segment text must be a string"
+        new_text = self.text + ot if add_to_end else ot + self.text
         self.text =  new_text
         self._anomaly_score += other.anomaly_score()
         
     def to_dict(self) -> SegmentDict:
-        result = {}
-        result['row_id'] = self.id
-        result['original_speaker'] = self.original_speaker
-        result['speaker'] = self.speaker
-        result['speaker_confidence'] = self.speaker_confidence
-        result['original_start'] = self.start
-        result['original_end'] = self.end
-        result['modified_start'] = self.start
-        result['modified_end'] = self.end
-        result['text'] = HanziConv.toSimplified(self.text.strip())
-        result['pinyin'] = self.pinyin
-        result['translation'] = self.translation
-        result['selectable'] = self.selectable
-        result['selected'] = self.selected
-        result['export'] = self.export
-
+        result: SegmentDict = {
+            'row_id': self.id,
+            'original_speaker': self.original_speaker or '',
+            'speaker': self.speaker or '',
+            'speaker_confidence': self.speaker_confidence or 0.0,
+            'original_start': self.start,
+            'original_end': self.end,
+            'modified_start': self.start,
+            'modified_end': self.end,
+            'text': HanziConv.toSimplified(self.text.strip()),
+            'pinyin': self.pinyin or '',
+            'translation': self.translation or '',
+            'selectable': self.selectable or False,
+            'selected': self.selected or False,
+            'export': self.export or False
+        }
         return result
 
-    def finalize(self, translate: bool=False):
+    def finalize(self):
 
         self.text = HanziConv.toSimplified(self.text.strip())
 
@@ -160,23 +172,20 @@ class SubSegment():
 
         text, pinyin = separate_english(self.text)
         self.text = text.strip()
-
-        if translate:
-            self.pinyin = pinyin.strip()
-            self.translation = translate(self.text, src='zh-cn', dest='en')
+        self.pinyin = pinyin.strip()
 
     def set_speaker(self, guess:SpeakerGuess):
         self.original_speaker = guess['label'].capitalize()
         self.speaker = self.original_speaker
         self.speaker_confidence = guess['score']
 
-
+    @staticmethod
     def slice_spectrogram(audio:AudioType, start: float, end:float, video_id: str = "") -> None:
         import librosa
         import librosa.display
-        import matplotlib
         import matplotlib.pyplot as plt
-        
+        import matplotlib.ticker as mticker
+
         add_chroma = False
         color_bars = False
         nrows = 3 if add_chroma else 2
@@ -199,6 +208,7 @@ class SubSegment():
         ax[1].set(title='Mel')
 
         # Compute the chroma
+        img3 = None
         if add_chroma:
             chroma = librosa.feature.chroma_cqt(y=raw, sr=sr)
             img3 = librosa.display.specshow(chroma, x_axis='time', y_axis='chroma', ax=ax[2])
@@ -211,18 +221,18 @@ class SubSegment():
         if color_bars: fig.colorbar(img1, ax=[ax[0], ax[1]], format='%+2.0f dB')
 
         # Or have individual colorbars:
-        if add_chroma and color_bars: fig.colorbar(img3, ax=[ax[2]])
+        if img3 and color_bars: fig.colorbar(img3, ax=[ax[2]])
 
         # We can then even do fancy things like zoom into a particular time and frequency
         # region.  Since the axes are shared, this will apply to all three subplots at once.
         #ax[0].set(xlim=[start, end])
 
         # Display the spectrogram
-        if video_id: fig.canvas.manager.set_window_title(video_id)
+        if video_id and fig.canvas.manager: fig.canvas.manager.set_window_title(video_id)
 
         # This little trick allows us to have the labels start from
         # the "start" value rather than 0
-        class Fmt(matplotlib.ticker.StrMethodFormatter):
+        class Fmt(mticker.StrMethodFormatter):
             def __call__(self, x, pos=None):
                 return self.fmt.format(x=(x+start), pos=pos)
 
@@ -233,6 +243,21 @@ class SubSegment():
         plt.show()
         plt.close()
 
+    @staticmethod
+    def splice_audio(audio:AudioType, start:float, piece:AudioType) -> AudioType:
+        """
+        Class function for splicing a piece of audio into an existing audio
+        clip at a given start point.
+        """
+        audio_data, sr = audio
+        piece_data, p_sr = piece
+        assert sr == p_sr, "Sample rates must match for splicing audio"
+        piece_len = len(piece_data)
+        audio_data[int(start * sr):piece_len + int(start * sr)] = piece_data
+
+        return (audio_data, sr)
+    
+    @staticmethod
     def slice_audio(audio:AudioType, start:float, end:float) -> AudioType:
         """
         Class function for slicing a piece of audio given a start and stop.
@@ -245,8 +270,8 @@ class SubSegment():
         return result, sr
 
     def spectogram(self, title="Spectrogram") -> None:
-        return SubSegment.slice_spectrogram(self.audio, self.start, self.end, title=title)
-    
+        return SubSegment.slice_spectrogram(self.audio, self.start, self.end, video_id=title)
+
     def slice(self) -> AudioType:
         """
         Returns the section of audio that this SubSegment represents
@@ -255,13 +280,15 @@ class SubSegment():
         """
         return SubSegment.slice_audio(self.audio, self.start, self.end)
     
+    @staticmethod
     def static_file_dest(yt_id: str, seg_id: str, path:str="") -> str:
         file_name = f'{yt_id}.{seg_id}.wav'
         return os.path.join(path, file_name)
 
     def file_dest(self, yt_id: str, path:str=""):
         return SubSegment.static_file_dest(yt_id, self.id, path=path)
-    
+
+    @staticmethod
     def save_audio_slice(dest: str, audio:AudioType, start: float, end: float) -> None:
         audio_slice, sr = SubSegment.slice_audio(audio, start, end)
         sf.write(dest, audio_slice, sr)
@@ -275,7 +302,7 @@ class SubSegment():
         if self.speaker is None:
             speak_str = "Speaker: "
         elif self.speaker.strip():
-            speak_str = f'{self.speaker.strip()} ({round(self.speaker_confidence, 4):.4f}): '
+            speak_str = f'{self.speaker.strip()} ({round(self.speaker_confidence or 0.0, 4):.4f}): '
         return speak_str
 
     def __repr__(self):
@@ -284,6 +311,7 @@ class SubSegment():
     def __str__(self):
         return f'[{to_minutes_seconds(self.start)}] {self.speaker_string()}{self.text.strip()}'
 
+    @staticmethod
     def default(o):
         if issubclass(type(o), SubSegment): return o.to_dict()
-        return WhisperSegment.default(o)
+        return o.default()

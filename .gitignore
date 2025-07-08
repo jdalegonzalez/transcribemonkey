@@ -25,6 +25,10 @@ transcripts/*.docx
 transcripts/audio_samples/*
 whisper-cs-dialogue/
 models/*
+temp/*
+checkpoints/*
+diarize/checkpoints/*
+diarize/samples/*
 audio_out/
 chunked-audio/
 speakerbox/
